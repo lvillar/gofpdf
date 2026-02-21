@@ -2,6 +2,7 @@ package reader
 
 import (
 	"bytes"
+	"crypto/rc4"
 	"fmt"
 	"io"
 	"strconv"
@@ -9,8 +10,9 @@ import (
 
 // parser is a recursive descent parser for PDF syntax.
 type parser struct {
-	data []byte
-	pos  int
+	data   []byte
+	pos    int
+	cipher *rc4.Cipher // optional: decrypts strings/streams in byte order
 }
 
 // newParser creates a parser from a byte slice.
@@ -286,7 +288,11 @@ func (p *parser) parseLiteralString() (String, error) {
 	if depth != 0 {
 		return String{}, fmt.Errorf("reader: unterminated literal string")
 	}
-	return String{Value: buf.Bytes()}, nil
+	data := buf.Bytes()
+	if p.cipher != nil {
+		p.cipher.XORKeyStream(data, data)
+	}
+	return String{Value: data}, nil
 }
 
 // parseHexString parses a PDF hex string: <hex digits>.
@@ -307,7 +313,11 @@ func (p *parser) parseHexString() (String, error) {
 			if hi >= 0 {
 				buf.WriteByte(byte(hi << 4)) // trailing nibble
 			}
-			return String{Value: buf.Bytes(), IsHex: true}, nil
+			data := buf.Bytes()
+			if p.cipher != nil {
+				p.cipher.XORKeyStream(data, data)
+			}
+			return String{Value: data, IsHex: true}, nil
 		}
 
 		if isWhitespace(b) {
@@ -448,6 +458,10 @@ func (p *parser) ParseIndirectObject() (*IndirectObject, error) {
 		streamData := make([]byte, length)
 		copy(streamData, p.data[p.pos:p.pos+length])
 		p.pos += length
+
+		if p.cipher != nil {
+			p.cipher.XORKeyStream(streamData, streamData)
+		}
 
 		// Skip "endstream"
 		p.skipWhitespace()

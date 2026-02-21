@@ -15,6 +15,7 @@ type Document struct {
 	trailer Dict
 	data    []byte
 	pages   []*Page
+	encrypt *encryptInfo // non-nil if document is encrypted and decrypted
 }
 
 // Open opens and parses a PDF file from disk.
@@ -36,8 +37,31 @@ func ReadFrom(r io.Reader) (*Document, error) {
 	return parse(data)
 }
 
+// OpenWithPassword opens and parses an encrypted PDF file using the given password.
+func OpenWithPassword(filename, password string) (*Document, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("reader: opening %s: %w", filename, err)
+	}
+	return parseWithPassword(data, password)
+}
+
+// ReadFromWithPassword parses an encrypted PDF from a reader using the given password.
+func ReadFromWithPassword(r io.Reader, password string) (*Document, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("reader: reading input: %w", err)
+	}
+	return parseWithPassword(data, password)
+}
+
 // parse is the internal entry point that builds a Document from raw PDF bytes.
 func parse(data []byte) (*Document, error) {
+	return parseWithPassword(data, "")
+}
+
+// parseWithPassword parses a PDF, attempting to decrypt if encrypted.
+func parseWithPassword(data []byte, password string) (*Document, error) {
 	doc := &Document{data: data}
 
 	// Parse PDF version from header
@@ -55,6 +79,13 @@ func parse(data []byte) (*Document, error) {
 	}
 	doc.xref = xref
 	doc.trailer = trailer
+
+	// Handle encryption
+	if doc.isEncrypted() {
+		if err := doc.decrypt(password); err != nil {
+			return nil, fmt.Errorf("reader: %w", err)
+		}
+	}
 
 	// Build page list from page tree
 	if err := doc.buildPageList(); err != nil {
@@ -151,6 +182,14 @@ func (d *Document) resolve(ref Reference) (Object, error) {
 	}
 
 	p := newParser(d.data[entry.Offset:])
+
+	// Set up per-object RC4 cipher for decryption.
+	// gofpdf reuses cipher state across strings in the same object,
+	// so we must decrypt strings in byte order during parsing.
+	if d.encrypt != nil && d.encrypt.key != nil {
+		p.cipher = d.makeObjectCipher(ref.Number, ref.Generation)
+	}
+
 	obj, err := p.ParseIndirectObject()
 	if err != nil {
 		return nil, fmt.Errorf("reader: parsing object %d: %w", ref.Number, err)
