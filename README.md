@@ -52,6 +52,18 @@ A comprehensive PDF library for Go — generate, read, merge, fill forms, sign, 
 - Support for ECDSA and RSA keys
 - Signature metadata: reason, location, timestamp
 
+### JSON Template DSL (`doctpl/`)
+- Create PDFs from declarative **JSON templates** — ideal for LLM-generated content
+- Headings (h1–h6), paragraphs, tables, lists, images, horizontal rules, spacers
+- Custom fonts, colors, margins, headers, and footers
+- JSON round-trip: templates can be serialized, stored, and re-rendered
+
+### MCP Server (`mcp/`, `cmd/gofpdf-mcp/`)
+- **Model Context Protocol** server for AI assistants (Claude Desktop, etc.)
+- 10 tools: `create_pdf`, `read_pdf`, `read_pdf_text`, `merge_pdfs`, `add_watermark`, `add_page_numbers`, `fill_form`, `flatten_form`, `rotate_pages`, `pdf_info`
+- 4 resources: `pdf://text`, `pdf://metadata`, `pdf://pages`, `pdf://form-fields`
+- JSON-RPC 2.0 over stdio — zero external dependencies
+
 ## Installation
 
 ```shell
@@ -147,6 +159,64 @@ meta := doc.Metadata()
 fmt.Println("Title:", meta["Title"])
 ```
 
+### Create a PDF from a JSON Template
+
+```go
+template := `{
+    "title": "Invoice #1234",
+    "pageSize": "A4",
+    "pages": [{
+        "elements": [
+            {"type": "heading", "text": "Invoice #1234", "level": 1},
+            {"type": "paragraph", "text": "Date: 2024-01-15\nBill To: John Doe"},
+            {"type": "table",
+             "columns": [
+                {"header": "Item", "width": 80},
+                {"header": "Qty", "width": 20, "align": "C"},
+                {"header": "Price", "width": 30, "align": "R"}
+             ],
+             "rows": [
+                ["Widget A", "10", "$5.00"],
+                ["Widget B", "5", "$12.00"]
+             ]},
+            {"type": "paragraph", "text": "Total: $110.00", "align": "R",
+             "font": {"style": "B", "size": 14}}
+        ]
+    }]
+}`
+
+var buf bytes.Buffer
+doctpl.Render(&buf, []byte(template))
+os.WriteFile("invoice.pdf", buf.Bytes(), 0644)
+```
+
+### Use with AI Assistants (MCP)
+
+Install the MCP server:
+
+```shell
+go install github.com/lvillar/gofpdf/cmd/gofpdf-mcp@latest
+```
+
+Add to your Claude Desktop configuration (`~/.config/claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "gofpdf": {
+      "command": "gofpdf-mcp"
+    }
+  }
+}
+```
+
+Once configured, you can ask Claude to:
+- *"Create a PDF invoice for Acme Corp with these line items..."*
+- *"Extract the text from report.pdf"*
+- *"Merge these 3 PDFs and add a CONFIDENTIAL watermark"*
+- *"Fill the form fields in application.pdf with this data..."*
+- *"What are the form fields in this PDF?"*
+
 ## Package Overview
 
 | Package | Description |
@@ -157,6 +227,9 @@ fmt.Println("Title:", meta["Title"])
 | `pageops/` | Merge, split, rotate, watermark operations |
 | `form/` | Create, fill, and flatten interactive forms |
 | `sign/` | Digital signatures — sign and verify |
+| `doctpl/` | JSON template DSL — declarative PDF generation |
+| `mcp/` | MCP server — expose PDF tools to AI assistants |
+| `cmd/gofpdf-mcp/` | MCP server binary for Claude Desktop |
 | `contrib/` | Community contributions (barcodes, etc.) |
 | `makefont/` | Font definition file generator |
 
@@ -173,7 +246,68 @@ import "github.com/jung-kurt/gofpdf"
 import "github.com/lvillar/gofpdf"
 ```
 
-All existing code continues to work. The new packages (`reader`, `table`, `pageops`, `form`, `sign`) are additive — they don't change the core API.
+All existing code continues to work. The new packages (`reader`, `table`, `pageops`, `form`, `sign`, `doctpl`, `mcp`) are additive — they don't change the core API.
+
+## JSON Template Schema Reference
+
+The `doctpl` package accepts JSON documents with the following structure:
+
+```json
+{
+  "title": "string",
+  "author": "string",
+  "subject": "string",
+  "pageSize": "A4 | Letter | Legal",
+  "unit": "mm | cm | in | pt",
+  "margin": {"top": 0, "right": 0, "bottom": 0, "left": 0},
+  "font": {"family": "Helvetica", "style": "", "size": 11},
+  "header": {"text": "...", "align": "L|C|R"},
+  "footer": {"text": "Page {page}", "align": "C"},
+  "pages": [{"elements": [...]}]
+}
+```
+
+### Supported Element Types
+
+| Type | Key Fields | Description |
+|------|-----------|-------------|
+| `heading` | `text`, `level` (1–6), `align`, `font`, `color` | Section heading with automatic sizing |
+| `paragraph` | `text`, `align`, `font`, `color` | Body text with word wrapping |
+| `table` | `columns` [{header, width, align}], `rows` [[...]], `headerStyle`, `cellStyle` | Data table with styled headers and alternating rows |
+| `list` | `items` [...], `ordered`, `bullet` | Bulleted or numbered list |
+| `image` | `src`, `x`, `y`, `width`, `height` | Embedded image (JPEG, PNG, GIF) |
+| `line` | `x1`, `y1`, `x2`, `y2`, `lineWidth`, `color` | Arbitrary line |
+| `rect` | `x`, `y`, `width`, `height`, `fillColor`, `border` | Rectangle shape |
+| `spacer` | `spacerHeight` | Vertical whitespace |
+| `hr` | `lineWidth`, `color` | Horizontal rule across the page |
+
+## MCP Server Reference
+
+The `gofpdf-mcp` binary exposes the following tools and resources via the Model Context Protocol:
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `create_pdf` | Create a PDF from a JSON template. Accepts `template` (object) and optional `outputPath` (string). |
+| `read_pdf` | Read PDF metadata (version, page count, title, author). Accepts `path`. |
+| `read_pdf_text` | Extract text content from specific or all pages. Accepts `path` and optional `pages` array. |
+| `merge_pdfs` | Merge multiple PDFs into one. Accepts `inputPaths` array and `outputPath`. |
+| `add_watermark` | Add a text watermark. Accepts `inputPath`, `outputPath`, `text`, and optional `fontSize`, `opacity`, `angle`. |
+| `add_page_numbers` | Add page numbers. Accepts `inputPath`, `outputPath`, and optional `format`, `position`. |
+| `fill_form` | Fill form fields. Accepts `inputPath`, `outputPath`, and `values` object (field name to value). |
+| `flatten_form` | Flatten form fields to static content. Accepts `inputPath` and `outputPath`. |
+| `rotate_pages` | Rotate pages by 90/180/270 degrees. Accepts `inputPath`, `outputPath`, `angle`, and optional `pages` array. |
+| `pdf_info` | Get detailed PDF info (metadata, pages, form fields, dimensions). Accepts `path`. |
+
+### Resources
+
+| URI | Description |
+|-----|-------------|
+| `pdf://text?path=...` | Full text content of a PDF |
+| `pdf://metadata?path=...` | Document metadata (title, author, version, page count) |
+| `pdf://pages?path=...` | Page dimensions and rotation info |
+| `pdf://form-fields?path=...` | Form field names, types, values, and options |
 
 ## Error Handling
 
