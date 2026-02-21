@@ -11,59 +11,43 @@ import (
 // MergeFiles combines multiple PDF files into a single output file.
 // Pages are added in order: all pages from the first file, then all from the second, etc.
 func MergeFiles(outputPath string, inputPaths ...string) error {
-	if len(inputPaths) == 0 {
-		return fmt.Errorf("pageops: no input files provided")
+	pdf, err := buildMergedPDF(inputPaths)
+	if err != nil {
+		return err
 	}
-
-	pdf := gofpdf.New("P", "pt", "A4", "")
-	pdf.SetAutoPageBreak(false, 0)
-
-	for _, inputPath := range inputPaths {
-		if err := appendFile(pdf, inputPath); err != nil {
-			return fmt.Errorf("pageops: merging %s: %w", inputPath, err)
-		}
-	}
-
 	return writePDFToFile(pdf, outputPath)
 }
 
 // Merge combines multiple PDF files and writes the result to w.
 func Merge(w io.Writer, inputPaths ...string) error {
-	if len(inputPaths) == 0 {
-		return fmt.Errorf("pageops: no input files provided")
-	}
-
-	pdf := gofpdf.New("P", "pt", "A4", "")
-	pdf.SetAutoPageBreak(false, 0)
-
-	for _, inputPath := range inputPaths {
-		if err := appendFile(pdf, inputPath); err != nil {
-			return fmt.Errorf("pageops: merging %s: %w", inputPath, err)
-		}
-	}
-
-	return writePDF(pdf, w)
-}
-
-// appendFile imports all pages from a PDF file into the target PDF.
-func appendFile(pdf *gofpdf.Fpdf, inputPath string) error {
-	pageCount, err := getPageCount(inputPath)
+	pdf, err := buildMergedPDF(inputPaths)
 	if err != nil {
 		return err
 	}
+	return writePDF(pdf, w)
+}
 
-	imp := gofpdi.NewImporter()
-
-	for i := 1; i <= pageCount; i++ {
-		tplID, w, h := importPage(pdf, imp, inputPath, i)
-		if w == 0 || h == 0 {
-			w = 595.28 // A4 default
-			h = 841.89
-		}
-
-		pdf.AddPageFormat("P", gofpdf.SizeType{Wd: w, Ht: h})
-		imp.UseImportedTemplate(pdf, tplID, 0, 0, w, h)
+func buildMergedPDF(inputPaths []string) (*gofpdf.Fpdf, error) {
+	if len(inputPaths) == 0 {
+		return nil, fmt.Errorf("pageops: no input files provided")
 	}
 
-	return pdf.Error()
+	pdf, _ := newBasePDF()
+
+	for _, inputPath := range inputPaths {
+		pageCount, err := getPageCount(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("pageops: merging %s: %w", inputPath, err)
+		}
+
+		imp := gofpdi.NewImporter()
+		for i := 1; i <= pageCount; i++ {
+			addImportedPage(pdf, imp, inputPath, i)
+		}
+	}
+
+	if pdf.Err() {
+		return nil, fmt.Errorf("pageops: merge: %w", pdf.Error())
+	}
+	return pdf, nil
 }

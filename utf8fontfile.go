@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 )
 
 // flags
@@ -307,12 +308,13 @@ func (utf *utf8FontFile) parseNAMETable() int {
 				return format
 			}
 			size /= 2
-			currentName = ""
+			var nameBuilder strings.Builder
 			for size > 0 {
 				char := utf.readUint16()
-				currentName += string(rune(char))
+				nameBuilder.WriteRune(rune(char))
 				size--
 			}
+			currentName = nameBuilder.String()
 			utf.fileReader.readerPosition = oldPos
 			utf.seek(int(oldPos))
 		} else if system == 1 && code == 0 && local == 0 {

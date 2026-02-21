@@ -21,6 +21,11 @@ import (
 	"strings"
 )
 
+var (
+	htmlTagRe  = regexp.MustCompile(`(?U)<.*>`)
+	htmlAttrRe = regexp.MustCompile(`([^=]+)=["']?([^"']+)`)
+)
+
 // HTMLBasicSegmentType defines a segment of literal text in which the current
 // attributes do not vary, or an open tag or a close tag.
 type HTMLBasicSegmentType struct {
@@ -37,9 +42,7 @@ func HTMLBasicTokenize(htmlStr string) (list []HTMLBasicSegmentType) {
 	list = make([]HTMLBasicSegmentType, 0, 16)
 	htmlStr = strings.ReplaceAll(htmlStr, "\n", " ")
 	htmlStr = strings.ReplaceAll(htmlStr, "\r", "")
-	tagRe, _ := regexp.Compile(`(?U)<.*>`)
-	attrRe, _ := regexp.Compile(`([^=]+)=["']?([^"']+)`)
-	capList := tagRe.FindAllStringIndex(htmlStr, -1)
+	capList := htmlTagRe.FindAllStringIndex(htmlStr, -1)
 	if capList != nil {
 		var seg HTMLBasicSegmentType
 		var parts []string
@@ -66,7 +69,7 @@ func HTMLBasicTokenize(htmlStr string) (list []HTMLBasicSegmentType) {
 							seg.Str = strings.ToLower(parts[0])
 							seg.Attr = make(map[string]string)
 						} else {
-							attrList := attrRe.FindAllStringSubmatch(part, -1)
+							attrList := htmlAttrRe.FindAllStringSubmatch(part, -1)
 							if attrList != nil {
 								for _, attr := range attrList {
 									seg.Attr[strings.ToLower(attr[1])] = attr[2]

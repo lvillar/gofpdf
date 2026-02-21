@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/lvillar/gofpdf/reader"
@@ -113,12 +114,15 @@ func Sign(input io.ReadSeeker, output io.Writer, opts Options) error {
 	if len(sigHex) > sigHexLen {
 		return fmt.Errorf("sign: signature too large (%d > %d)", len(sigHex), sigHexLen)
 	}
-	for len(sigHex) < sigHexLen {
-		sigHex += "0"
+	// Pad with zeros to fill the reserved space
+	padded := make([]byte, sigHexLen)
+	copy(padded, sigHex)
+	for i := len(sigHex); i < sigHexLen; i++ {
+		padded[i] = '0'
 	}
 
 	// Replace placeholder with actual signature
-	copy(update[sigOffset:sigOffset+sigHexLen], []byte(sigHex))
+	copy(update[sigOffset:sigOffset+sigHexLen], padded)
 
 	_, err = output.Write(update)
 	return err
@@ -193,16 +197,17 @@ func buildSignedPDF(data []byte, sigProps string, sigHexLen int) ([]byte, [4]int
 }
 
 func escapePDF(s string) string {
-	s = fmt.Sprintf("%s", s)
-	r := ""
+	var b strings.Builder
+	b.Grow(len(s))
 	for _, c := range s {
 		switch c {
 		case '(', ')', '\\':
-			r += `\` + string(c)
+			b.WriteByte('\\')
+			b.WriteRune(c)
 		default:
-			r += string(c)
+			b.WriteRune(c)
 		}
 	}
-	return r
+	return b.String()
 }
 

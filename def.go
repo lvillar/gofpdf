@@ -133,7 +133,7 @@ const (
 	// AlignMiddle aligns the cell to the middle
 	AlignMiddle Align = "M"
 	// AlignBaseline aligns the cell to the baseline
-	AlignBaseline Align = "B"
+	AlignBaseline Align = "A"
 )
 
 type colorMode int
@@ -670,7 +670,7 @@ const (
 	// uppercase letters, but they are sized and their proportions
 	// adjusted so that they have the same size and stroke weight as
 	// lowercase glyphs in the same typeface family.
-	SmallCap = 1 << 18
+	SmallCap = 1 << 17
 	// ForceBold determines whether bold glyphs shall be painted with
 	// extra pixels even at very small text sizes by a conforming
 	// reader. If the ForceBold flag is set, features of bold glyphs

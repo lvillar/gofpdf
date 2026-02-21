@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"bytes"
 	"crypto/md5"
 	"crypto/rc4"
 	"encoding/binary"
@@ -190,8 +191,8 @@ func validateUserPassword(key []byte, info *encryptInfo) bool {
 	c.XORKeyStream(digest, digest)
 
 	// 19 additional RC4 passes with modified keys
+	newKey := make([]byte, len(key))
 	for i := 1; i <= 19; i++ {
-		newKey := make([]byte, len(key))
 		for j := range key {
 			newKey[j] = key[j] ^ byte(i)
 		}
@@ -237,8 +238,8 @@ func recoverUserPassFromOwner(ownerPass []byte, info *encryptInfo) []byte {
 		c.XORKeyStream(userPass, userPass)
 	} else {
 		// R >= 3: 20 RC4 passes in reverse
+		newKey := make([]byte, len(key))
 		for i := 19; i >= 0; i-- {
-			newKey := make([]byte, len(key))
 			for j := range key {
 				newKey[j] = key[j] ^ byte(i)
 			}
@@ -282,21 +283,5 @@ func (d *Document) makeObjectCipher(objNum, genNum int) *rc4.Cipher {
 
 // bytesEqual compares two byte slices for equality.
 func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		// Compare up to the shorter length
-		n := len(a)
-		if len(b) < n {
-			n = len(b)
-		}
-		if n == 0 {
-			return false
-		}
-		return bytesEqual(a[:n], b[:n])
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return bytes.Equal(a, b)
 }

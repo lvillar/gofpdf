@@ -5,7 +5,6 @@ import (
 	"io"
 
 	gofpdf "github.com/lvillar/gofpdf"
-	"github.com/lvillar/gofpdf/contrib/gofpdi"
 )
 
 // RotatePages rotates specific pages by the given angle (90, 180, or 270 degrees).
@@ -37,26 +36,15 @@ func buildRotatedPDF(inputPath string, angle int, pages []int) (*gofpdf.Fpdf, er
 		return nil, err
 	}
 
-	rotatePages := make(map[int]bool)
-	if pages == nil {
-		for i := 1; i <= pageCount; i++ {
-			rotatePages[i] = true
-		}
-	} else {
-		for _, p := range pages {
-			rotatePages[p] = true
-		}
-	}
+	rotatePages := buildPageSet(pages, pageCount)
 
-	pdf := gofpdf.New("P", "pt", "A4", "")
-	pdf.SetAutoPageBreak(false, 0)
-	imp := gofpdi.NewImporter()
+	pdf, imp := newBasePDF()
 
 	for i := 1; i <= pageCount; i++ {
 		tplID, pw, ph := importPage(pdf, imp, inputPath, i)
 		if pw == 0 || ph == 0 {
-			pw = 595.28
-			ph = 841.89
+			pw = defaultPageWidth
+			ph = defaultPageHeight
 		}
 
 		if rotatePages[i] {
@@ -67,24 +55,17 @@ func buildRotatedPDF(inputPath string, angle int, pages []int) (*gofpdf.Fpdf, er
 				pdf.AddPageFormat("P", gofpdf.SizeType{Wd: pw, Ht: ph})
 			}
 
-			// Apply transformation
-			cx := pw / 2
-			cy := ph / 2
-
 			pdf.TransformBegin()
-
 			switch angle {
 			case 90:
-				// Rotate 90 degrees: translate to fit new dimensions
 				pdf.TransformRotate(-90, 0, 0)
 				pdf.TransformTranslate(0, pw)
 			case 180:
-				pdf.TransformRotate(-180, cx, cy)
+				pdf.TransformRotate(-180, pw/2, ph/2)
 			case 270:
 				pdf.TransformRotate(-270, 0, 0)
 				pdf.TransformTranslate(ph, 0)
 			}
-
 			imp.UseImportedTemplate(pdf, tplID, 0, 0, pw, ph)
 			pdf.TransformEnd()
 		} else {
