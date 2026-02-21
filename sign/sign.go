@@ -114,12 +114,15 @@ func Sign(input io.ReadSeeker, output io.Writer, opts Options) error {
 	if len(sigHex) > sigHexLen {
 		return fmt.Errorf("sign: signature too large (%d > %d)", len(sigHex), sigHexLen)
 	}
-	for len(sigHex) < sigHexLen {
-		sigHex += "0"
+	// Pad with zeros to fill the reserved space
+	padded := make([]byte, sigHexLen)
+	copy(padded, sigHex)
+	for i := len(sigHex); i < sigHexLen; i++ {
+		padded[i] = '0'
 	}
 
 	// Replace placeholder with actual signature
-	copy(update[sigOffset:sigOffset+sigHexLen], []byte(sigHex))
+	copy(update[sigOffset:sigOffset+sigHexLen], padded)
 
 	_, err = output.Write(update)
 	return err

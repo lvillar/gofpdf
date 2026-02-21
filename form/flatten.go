@@ -10,7 +10,13 @@ import (
 	"github.com/lvillar/gofpdf/reader"
 )
 
-var flattenObjRefRe = regexp.MustCompile(`\d+\s+\d+\s+R`)
+var (
+	flattenObjRefRe      = regexp.MustCompile(`\d+\s+\d+\s+R`)
+	flattenFieldTypeRe   = regexp.MustCompile(`/FT\s+/[A-Za-z]+`)
+	flattenSubtypeRe     = regexp.MustCompile(`/Subtype\s+/Widget`)
+	flattenAppearanceRe  = regexp.MustCompile(`/DA\s*\([^)]*\)`)
+	flattenNeedAppRe     = regexp.MustCompile(`/NeedAppearances\s+(true|false)`)
+)
 
 // Flatten reads a PDF with form fields and converts all field widgets into
 // static page content, removing the interactive AcroForm structure.
@@ -149,24 +155,23 @@ func blankFieldMarkers(data []byte, field *reader.FormField) {
 		fieldDict := data[dictStart : dictEnd+2]
 
 		// Blank out /FT /Type entries
-		blankPattern(fieldDict, `/FT\s+/[A-Za-z]+`)
+		blankMatches(fieldDict, flattenFieldTypeRe)
 
 		// Blank out /Subtype /Widget
-		blankPattern(fieldDict, `/Subtype\s+/Widget`)
+		blankMatches(fieldDict, flattenSubtypeRe)
 
 		// Blank out /DA (default appearance)
-		blankPattern(fieldDict, `/DA\s*\([^)]*\)`)
+		blankMatches(fieldDict, flattenAppearanceRe)
 
 		// Blank out /NeedAppearances
-		blankPattern(fieldDict, `/NeedAppearances\s+(true|false)`)
+		blankMatches(fieldDict, flattenNeedAppRe)
 
 		break
 	}
 }
 
-// blankPattern replaces all matches of a regex pattern in data with spaces.
-func blankPattern(data []byte, pattern string) {
-	re := regexp.MustCompile(pattern)
+// blankMatches replaces all matches of a compiled regex in data with spaces.
+func blankMatches(data []byte, re *regexp.Regexp) {
 	for _, loc := range re.FindAllIndex(data, -1) {
 		for i := loc[0]; i < loc[1]; i++ {
 			data[i] = ' '

@@ -3,12 +3,19 @@ package pageops
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 )
 
 // SplitToFiles splits a PDF into individual pages, saving each to outputDir.
 // Files are named page_001.pdf, page_002.pdf, etc.
 func SplitToFiles(inputPath, outputDir string) error {
+	if info, err := os.Stat(outputDir); err != nil {
+		return fmt.Errorf("pageops: output directory: %w", err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("pageops: %s is not a directory", outputDir)
+	}
+
 	pageCount, err := getPageCount(inputPath)
 	if err != nil {
 		return err
