@@ -163,7 +163,7 @@ func (f *Fpdf) GetFillSpotColor() (name string, c, m, y, k byte) {
 func (f *Fpdf) putSpotColors() {
 	for k, v := range f.spotColorMap {
 		f.newobj()
-		f.outf("[/Separation /%s", strings.Replace(k, " ", "#20", -1))
+		f.outf("[/Separation /%s", strings.ReplaceAll(k, " ", "#20"))
 		f.out("/DeviceCMYK <<")
 		f.out("/Range [0 1 0 1 0 1 0 1] /C0 [0 0 0 0] ")
 		f.outf("/C1 [%.3f %.3f %.3f %.3f] ", float64(v.val.c)/100, float64(v.val.m)/100,

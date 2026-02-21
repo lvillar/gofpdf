@@ -25,6 +25,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -68,17 +69,9 @@ func bufferFromReader(r io.Reader) (b *bytes.Buffer, err error) {
 	return
 }
 
-// slicesEqual returns true if the two specified float slices are equal
+// slicesEqual returns true if the two specified float slices are equal.
 func slicesEqual(a, b []float64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(a, b)
 }
 
 // sliceCompress returns a zlib-compressed copy of the specified byte array
@@ -456,7 +449,7 @@ func isChinese(rune2 rune) bool {
 // Condition font family string to PDF name compliance. See section 5.3 (Names)
 // in https://resources.infosecinstitute.com/pdf-file-format-basic-structure/
 func fontFamilyEscape(familyStr string) (escStr string) {
-	escStr = strings.Replace(familyStr, " ", "#20", -1)
+	escStr = strings.ReplaceAll(familyStr, " ", "#20")
 	// Additional replacements can take place here
 	return
 }

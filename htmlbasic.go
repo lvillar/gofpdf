@@ -35,8 +35,8 @@ type HTMLBasicSegmentType struct {
 func HTMLBasicTokenize(htmlStr string) (list []HTMLBasicSegmentType) {
 	// This routine is adapted from http://www.fpdf.org/
 	list = make([]HTMLBasicSegmentType, 0, 16)
-	htmlStr = strings.Replace(htmlStr, "\n", " ", -1)
-	htmlStr = strings.Replace(htmlStr, "\r", "", -1)
+	htmlStr = strings.ReplaceAll(htmlStr, "\n", " ")
+	htmlStr = strings.ReplaceAll(htmlStr, "\r", "")
 	tagRe, _ := regexp.Compile(`(?U)<.*>`)
 	attrRe, _ := regexp.Compile(`([^=]+)=["']?([^"']+)`)
 	capList := tagRe.FindAllStringIndex(htmlStr, -1)

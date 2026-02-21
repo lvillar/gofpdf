@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"net/http"
@@ -32,9 +31,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jung-kurt/gofpdf"
-	"github.com/jung-kurt/gofpdf/internal/example"
-	"github.com/jung-kurt/gofpdf/internal/files"
+	"github.com/lvillar/gopdf"
+	"github.com/lvillar/gopdf/internal/example"
+	"github.com/lvillar/gopdf/internal/files"
 )
 
 func init() {
@@ -130,7 +129,7 @@ func TestIssue0193(t *testing.T) {
 	var err error
 	var rdr *bytes.Reader
 
-	png, err = ioutil.ReadFile(example.ImageFile("sweden.png"))
+	png, err = os.ReadFile(example.ImageFile("sweden.png"))
 	if err == nil {
 		rdr = bytes.NewReader(png)
 		pdf = gofpdf.New("P", "mm", "A4", "")
@@ -251,7 +250,7 @@ type fontResourceType struct {
 
 func (f fontResourceType) Open(name string) (rdr io.Reader, err error) {
 	var buf []byte
-	buf, err = ioutil.ReadFile(example.FontFile(name))
+	buf, err = os.ReadFile(example.FontFile(name))
 	if err == nil {
 		rdr = bytes.NewReader(buf)
 		fmt.Printf("Generalized font loader reading %s\n", name)
@@ -387,7 +386,7 @@ func ExampleFpdf_MultiCell() {
 	}
 	chapterBody := func(fileStr string) {
 		// Read text file
-		txtStr, err := ioutil.ReadFile(fileStr)
+		txtStr, err := os.ReadFile(fileStr)
 		if err != nil {
 			pdf.SetError(err)
 		}
@@ -446,7 +445,7 @@ func ExampleFpdf_SetLeftMargin() {
 	}
 	chapterBody := func(fileStr string) {
 		// Read text file
-		txtStr, err := ioutil.ReadFile(fileStr)
+		txtStr, err := os.ReadFile(fileStr)
 		if err != nil {
 			pdf.SetError(err)
 		}
@@ -1568,7 +1567,7 @@ func ExampleFpdf_CellFormat_align() {
 				pdf.CellFormat(170, 257, rec.txt, borderStr, 0, rec.align, false, 0, linkStr)
 				borderStr = ""
 			}
-			linkStr = "https://github.com/jung-kurt/gofpdf"
+			linkStr = "https://github.com/lvillar/gopdf"
 		}
 	}
 	pdf := gofpdf.New("P", "mm", "A4", "") // A4 210.0 x 297.0
@@ -1776,7 +1775,7 @@ func ExampleFpdf_RegisterImageReader() {
 		wd       = 210
 		ht       = 297
 		fontSize = 15
-		urlStr   = "https://github.com/jung-kurt/gofpdf/blob/master/image/gofpdf.png?raw=true"
+		urlStr   = "https://github.com/lvillar/gopdf/blob/master/image/gofpdf.png?raw=true"
 		msgStr   = `Images from the web can be easily embedded when a PDF document is generated.`
 	)
 
@@ -2613,7 +2612,7 @@ func ExampleFpdf_AddUTF8Font() {
 	pdf.AddUTF8Font("dejavu", "BI", example.FontFile("DejaVuSansCondensed-BoldOblique.ttf"))
 
 	fileStr = example.Filename("Fpdf_AddUTF8Font")
-	txtStr, err = ioutil.ReadFile(example.TextFile("utf-8test.txt"))
+	txtStr, err = os.ReadFile(example.TextFile("utf-8test.txt"))
 	if err == nil {
 
 		pdf.SetFont("dejavu", "B", 17)
@@ -2622,7 +2621,7 @@ func ExampleFpdf_AddUTF8Font() {
 		pdf.MultiCell(100, 5, string(txtStr), "", "C", false)
 		pdf.Ln(15)
 
-		txtStr, err = ioutil.ReadFile(example.TextFile("utf-8test2.txt"))
+		txtStr, err = os.ReadFile(example.TextFile("utf-8test2.txt"))
 		if err == nil {
 
 			pdf.SetFont("dejavu", "BI", 17)
@@ -2646,11 +2645,11 @@ func ExampleUTF8CutFont() {
 
 	pdfFileStr = example.Filename("Fpdf_UTF8CutFont")
 	fullFontFileStr = example.FontFile("calligra.ttf")
-	fullFont, err = ioutil.ReadFile(fullFontFileStr)
+	fullFont, err = os.ReadFile(fullFontFileStr)
 	if err == nil {
 		subFontFileStr = "calligra_abcde.ttf"
 		subFont = gofpdf.UTF8CutFont(fullFont, "abcde")
-		err = ioutil.WriteFile(subFontFileStr, subFont, 0600)
+		err = os.WriteFile(subFontFileStr, subFont, 0600)
 		if err == nil {
 			y := 24.0
 			pdf := gofpdf.New("P", "mm", "A4", "")
@@ -2820,7 +2819,7 @@ func ExampleFpdf_SetTextRenderingMode() {
 func TestIssue0316(t *testing.T) {
 	pdf := gofpdf.New(gofpdf.OrientationPortrait, "mm", "A4", "")
 	pdf.AddPage()
-	fontBytes, _ := ioutil.ReadFile(example.FontFile("DejaVuSansCondensed.ttf"))
+	fontBytes, _ := os.ReadFile(example.FontFile("DejaVuSansCondensed.ttf"))
 	ofontBytes := append([]byte{}, fontBytes...)
 	pdf.AddUTF8FontFromBytes("dejavu", "", fontBytes)
 	pdf.SetFont("dejavu", "", 16)
@@ -2837,7 +2836,7 @@ func TestIssue0316(t *testing.T) {
 func TestMultiCellUnsupportedChar(t *testing.T) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
-	fontBytes, _ := ioutil.ReadFile(example.FontFile("DejaVuSansCondensed.ttf"))
+	fontBytes, _ := os.ReadFile(example.FontFile("DejaVuSansCondensed.ttf"))
 	pdf.AddUTF8FontFromBytes("dejavu", "", fontBytes)
 	pdf.SetFont("dejavu", "", 16)
 
@@ -2859,12 +2858,12 @@ func ExampleFpdf_SetAttachments() {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 
 	// Global attachments
-	file, err := ioutil.ReadFile("grid.go")
+	file, err := os.ReadFile("grid.go")
 	if err != nil {
 		pdf.SetError(err)
 	}
 	a1 := gofpdf.Attachment{Content: file, Filename: "grid.go"}
-	file, err = ioutil.ReadFile("LICENSE")
+	file, err = os.ReadFile("LICENSE")
 	if err != nil {
 		pdf.SetError(err)
 	}
@@ -2884,7 +2883,7 @@ func ExampleFpdf_AddAttachmentAnnotation() {
 	pdf.AddPage()
 
 	// Per page attachment
-	file, err := ioutil.ReadFile("grid.go")
+	file, err := os.ReadFile("grid.go")
 	if err != nil {
 		pdf.SetError(err)
 	}
