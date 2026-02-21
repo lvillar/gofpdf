@@ -106,7 +106,7 @@ func CompareBytes(sl1, sl2 []byte, printDiff bool) (err error) {
 		}
 		posStart = posEnd
 	}
-	if diffs {
+	if diffs || len1 != len2 {
 		err = fmt.Errorf("documents are different")
 	}
 	return

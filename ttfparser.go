@@ -30,6 +30,8 @@ import (
 	"strings"
 )
 
+var ttfPostScriptCleanRe = regexp.MustCompile(`[(){}<> /%[\\\]]`)
+
 // TtfType contains metrics of a TrueType font.
 type TtfType struct {
 	Embeddable             bool
@@ -280,11 +282,7 @@ func (t *ttfParser) ParseName() (err error) {
 					return
 				}
 				s = strings.ReplaceAll(s, "\x00", "")
-				var re *regexp.Regexp
-				if re, err = regexp.Compile("[(){}<> /%[\\]]"); err != nil {
-					return
-				}
-				t.rec.PostScriptName = re.ReplaceAllString(s, "")
+				t.rec.PostScriptName = ttfPostScriptCleanRe.ReplaceAllString(s, "")
 			}
 		}
 		if t.rec.PostScriptName == "" {
