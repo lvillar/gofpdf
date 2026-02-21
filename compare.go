@@ -96,7 +96,7 @@ func CompareBytes(sl1, sl2 []byte, printDiff bool) (err error) {
 	if length > len2 {
 		length = len2
 	}
-	for posStart < length-1 {
+	for posStart < length {
 		posEnd = posStart + 16
 		if posEnd > length {
 			posEnd = length
@@ -116,7 +116,8 @@ func CompareBytes(sl1, sl2 []byte, printDiff bool) (err error) {
 // readers byte-for-byte. Nil is returned if the buffers are equal, otherwise
 // an error.
 func ComparePDFs(rdr1, rdr2 io.Reader, printDiff bool) (err error) {
-	var b1, b2 *bytes.Buffer
+	b1 := new(bytes.Buffer)
+	b2 := new(bytes.Buffer)
 	_, err = b1.ReadFrom(rdr1)
 	if err == nil {
 		_, err = b2.ReadFrom(rdr2)

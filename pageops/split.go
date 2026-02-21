@@ -4,9 +4,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-
-	gofpdf "github.com/lvillar/gofpdf"
-	"github.com/lvillar/gofpdf/contrib/gofpdi"
 )
 
 // SplitToFiles splits a PDF into individual pages, saving each to outputDir.
@@ -34,18 +31,10 @@ func ExtractPages(w io.Writer, inputPath string, pages ...int) error {
 		return fmt.Errorf("pageops: no pages specified")
 	}
 
-	pdf := gofpdf.New("P", "pt", "A4", "")
-	pdf.SetAutoPageBreak(false, 0)
-	imp := gofpdi.NewImporter()
+	pdf, imp := newBasePDF()
 
 	for _, pageNum := range pages {
-		tplID, pw, ph := importPage(pdf, imp, inputPath, pageNum)
-		if pw == 0 || ph == 0 {
-			pw = 595.28
-			ph = 841.89
-		}
-		pdf.AddPageFormat("P", gofpdf.SizeType{Wd: pw, Ht: ph})
-		imp.UseImportedTemplate(pdf, tplID, 0, 0, pw, ph)
+		addImportedPage(pdf, imp, inputPath, pageNum)
 	}
 
 	return writePDF(pdf, w)
@@ -57,18 +46,10 @@ func ExtractPagesToFile(inputPath, outputPath string, pages ...int) error {
 		return fmt.Errorf("pageops: no pages specified")
 	}
 
-	pdf := gofpdf.New("P", "pt", "A4", "")
-	pdf.SetAutoPageBreak(false, 0)
-	imp := gofpdi.NewImporter()
+	pdf, imp := newBasePDF()
 
 	for _, pageNum := range pages {
-		tplID, pw, ph := importPage(pdf, imp, inputPath, pageNum)
-		if pw == 0 || ph == 0 {
-			pw = 595.28
-			ph = 841.89
-		}
-		pdf.AddPageFormat("P", gofpdf.SizeType{Wd: pw, Ht: ph})
-		imp.UseImportedTemplate(pdf, tplID, 0, 0, pw, ph)
+		addImportedPage(pdf, imp, inputPath, pageNum)
 	}
 
 	return writePDFToFile(pdf, outputPath)

@@ -28,6 +28,47 @@ const (
 	BottomRight
 )
 
+const (
+	// Default A4 page dimensions in points (72 dpi).
+	defaultPageWidth  = 595.28
+	defaultPageHeight = 841.89
+)
+
+// newBasePDF creates a new PDF configured for page operations (no auto page break).
+func newBasePDF() (*gofpdf.Fpdf, *gofpdi.Importer) {
+	pdf := gofpdf.New("P", "pt", "A4", "")
+	pdf.SetAutoPageBreak(false, 0)
+	return pdf, gofpdi.NewImporter()
+}
+
+// addImportedPage imports a page from source and adds it to the PDF with default dimensions.
+func addImportedPage(pdf *gofpdf.Fpdf, imp *gofpdi.Importer, sourceFile string, pageNum int) (pw, ph float64) {
+	tplID, pw, ph := importPage(pdf, imp, sourceFile, pageNum)
+	if pw == 0 || ph == 0 {
+		pw = defaultPageWidth
+		ph = defaultPageHeight
+	}
+	pdf.AddPageFormat("P", gofpdf.SizeType{Wd: pw, Ht: ph})
+	imp.UseImportedTemplate(pdf, tplID, 0, 0, pw, ph)
+	return pw, ph
+}
+
+// buildPageSet creates a map of selected page numbers.
+// If pages is nil, all pages 1..pageCount are selected.
+func buildPageSet(pages []int, pageCount int) map[int]bool {
+	m := make(map[int]bool)
+	if pages == nil {
+		for i := 1; i <= pageCount; i++ {
+			m[i] = true
+		}
+	} else {
+		for _, p := range pages {
+			m[p] = true
+		}
+	}
+	return m
+}
+
 // importPage imports a single page from a source file into the target PDF.
 // Returns the template ID and page dimensions.
 func importPage(pdf *gofpdf.Fpdf, imp *gofpdi.Importer, sourceFile string, pageNum int) (tplID int, w, h float64) {

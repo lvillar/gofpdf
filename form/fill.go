@@ -11,6 +11,12 @@ import (
 	"github.com/lvillar/gofpdf/reader"
 )
 
+var (
+	fillValueStringRe = regexp.MustCompile(`/V\s*\([^)]*\)`)
+	fillValueNameRe   = regexp.MustCompile(`/V\s+/[A-Za-z]+(\s+/AS\s+/[A-Za-z]+)?`)
+	fillObjPatternRe  = regexp.MustCompile(`(?m)^(\d+)\s+(\d+)\s+obj\b`)
+)
+
 // Fill reads a PDF from input, fills form fields with the provided values,
 // and writes the result to output. Field names are matched case-sensitively.
 //
@@ -142,7 +148,7 @@ func setFieldValue(data []byte, field *reader.FormField, value string) []byte {
 		var newDict []byte
 		replaced := false
 
-		if loc := regexp.MustCompile(`/V\s*\([^)]*\)`).FindIndex(fieldDict); loc != nil {
+		if loc := fillValueStringRe.FindIndex(fieldDict); loc != nil {
 			newDict = make([]byte, 0, len(fieldDict))
 			newDict = append(newDict, fieldDict[:loc[0]]...)
 			newDict = append(newDict, []byte(newValueStr)...)
@@ -150,7 +156,7 @@ func setFieldValue(data []byte, field *reader.FormField, value string) []byte {
 			replaced = true
 		}
 		if !replaced {
-			if loc := regexp.MustCompile(`/V\s+/[A-Za-z]+(\s+/AS\s+/[A-Za-z]+)?`).FindIndex(fieldDict); loc != nil {
+			if loc := fillValueNameRe.FindIndex(fieldDict); loc != nil {
 				newDict = make([]byte, 0, len(fieldDict))
 				newDict = append(newDict, fieldDict[:loc[0]]...)
 				newDict = append(newDict, []byte(newValueStr)...)
@@ -185,8 +191,7 @@ func setFieldValue(data []byte, field *reader.FormField, value string) []byte {
 // that shift object positions.
 func rebuildXref(data []byte) []byte {
 	// Find all "N G obj" markers
-	objPattern := regexp.MustCompile(`(?m)^(\d+)\s+(\d+)\s+obj\b`)
-	matches := objPattern.FindAllSubmatchIndex(data, -1)
+	matches := fillObjPatternRe.FindAllSubmatchIndex(data, -1)
 	if len(matches) == 0 {
 		return data
 	}

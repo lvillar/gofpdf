@@ -424,18 +424,12 @@ func arrayMerge(arr1, arr2 *untypedKeyMap) *untypedKeyMap {
 }
 
 func remove(arr []int, key int) []int {
-	n := 0
 	for i, mKey := range arr {
 		if mKey == key {
-			n = i
+			return append(arr[:i], arr[i+1:]...)
 		}
 	}
-	if n == 0 {
-		return arr[1:]
-	} else if n == len(arr)-1 {
-		return arr[:len(arr)-1]
-	}
-	return append(arr[:n], arr[n+1:]...)
+	return arr
 }
 
 func isChinese(rune2 rune) bool {

@@ -14,6 +14,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/lvillar/gofpdf/reader"
@@ -193,16 +194,17 @@ func buildSignedPDF(data []byte, sigProps string, sigHexLen int) ([]byte, [4]int
 }
 
 func escapePDF(s string) string {
-	s = fmt.Sprintf("%s", s)
-	r := ""
+	var b strings.Builder
+	b.Grow(len(s))
 	for _, c := range s {
 		switch c {
 		case '(', ')', '\\':
-			r += `\` + string(c)
+			b.WriteByte('\\')
+			b.WriteRune(c)
 		default:
-			r += string(c)
+			b.WriteRune(c)
 		}
 	}
-	return r
+	return b.String()
 }
 

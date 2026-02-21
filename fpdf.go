@@ -53,7 +53,7 @@ type fmtBuffer struct {
 }
 
 func (b *fmtBuffer) printf(fmtStr string, args ...interface{}) {
-	b.Buffer.WriteString(fmt.Sprintf(fmtStr, args...))
+	fmt.Fprintf(&b.Buffer, fmtStr, args...)
 }
 
 func fpdfNew(orientationStr, unitStr, sizeStr, fontDirStr string, size SizeType) (f *Fpdf) {
@@ -864,7 +864,7 @@ func rgbColorValue(r, g, b int, grayStr, fullStr string) (clr colorType) {
 	clr.ig, clr.g = colorComp(g)
 	clr.ib, clr.b = colorComp(b)
 	clr.mode = colorModeRGB
-	clr.gray = clr.ir == clr.ig && clr.r == clr.b
+	clr.gray = clr.ir == clr.ig && clr.ig == clr.ib
 	if len(grayStr) > 0 {
 		if clr.gray {
 			clr.str = sprintf("%.3f %s", clr.r, grayStr)

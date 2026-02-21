@@ -28,7 +28,6 @@ func (ImageContent) cellContent() {}
 type Cell struct {
 	content CellContent
 	colspan int
-	rowspan int
 	style   *CellStyle
 }
 
@@ -36,14 +35,6 @@ type Cell struct {
 func (c *Cell) SetColspan(n int) *Cell {
 	if n > 0 {
 		c.colspan = n
-	}
-	return c
-}
-
-// SetRowspan sets the number of rows this cell spans.
-func (c *Cell) SetRowspan(n int) *Cell {
-	if n > 0 {
-		c.rowspan = n
 	}
 	return c
 }
@@ -85,7 +76,6 @@ func (r *Row) AddCell(text string) *Cell {
 	c := &Cell{
 		content: TextContent{Text: text},
 		colspan: 1,
-		rowspan: 1,
 	}
 	r.cells = append(r.cells, c)
 	return c
@@ -101,7 +91,6 @@ func (r *Row) AddImageCell(imagePath string) *Cell {
 	c := &Cell{
 		content: ImageContent{Path: imagePath},
 		colspan: 1,
-		rowspan: 1,
 	}
 	r.cells = append(r.cells, c)
 	return c

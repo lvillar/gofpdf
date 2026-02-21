@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+var (
+	verifySigTypeRe    = regexp.MustCompile(`/Type\s+/Sig\b`)
+	verifyByteRangeRe  = regexp.MustCompile(`/ByteRange\s*\[([^\]]+)\]`)
+	verifyContentsRe   = regexp.MustCompile(`/Contents\s*<([0-9a-fA-F]+)>`)
+)
+
 // Verify checks the digital signatures in a PDF document.
 // It extracts signature dictionaries, recomputes digests from byte ranges,
 // and returns information about each signature found.
@@ -116,8 +122,7 @@ func findSignatureDicts(data []byte) []rawSigInfo {
 	var results []rawSigInfo
 
 	// Find all /Type /Sig occurrences
-	sigPattern := regexp.MustCompile(`/Type\s+/Sig\b`)
-	matches := sigPattern.FindAllIndex(data, -1)
+	matches := verifySigTypeRe.FindAllIndex(data, -1)
 
 	for _, m := range matches {
 		sig := rawSigInfo{}
@@ -223,8 +228,7 @@ func findSigDictEnd(data []byte, pos int) int {
 // extractByteRange extracts the /ByteRange array from a signature dict.
 func extractByteRange(dict []byte) [4]int {
 	var br [4]int
-	re := regexp.MustCompile(`/ByteRange\s*\[([^\]]+)\]`)
-	m := re.FindSubmatch(dict)
+	m := verifyByteRangeRe.FindSubmatch(dict)
 	if m == nil {
 		return br
 	}
@@ -253,8 +257,7 @@ func extractContents(data []byte, dictStart, dictEnd int) []byte {
 	// Look for /Contents <hex...> in the broader context
 	// The hex string may be very large, so we search from dictStart
 	searchArea := data[dictStart:]
-	re := regexp.MustCompile(`/Contents\s*<([0-9a-fA-F]+)>`)
-	m := re.FindSubmatch(searchArea)
+	m := verifyContentsRe.FindSubmatch(searchArea)
 	if m == nil {
 		return nil
 	}

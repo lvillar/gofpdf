@@ -10,6 +10,8 @@ import (
 	"github.com/lvillar/gofpdf/reader"
 )
 
+var flattenObjRefRe = regexp.MustCompile(`\d+\s+\d+\s+R`)
+
 // Flatten reads a PDF with form fields and converts all field widgets into
 // static page content, removing the interactive AcroForm structure.
 // The resulting PDF will look the same but fields will no longer be editable.
@@ -107,9 +109,8 @@ func blankAcroForm(data []byte) {
 		}
 	} else {
 		// Reference: /AcroForm N N R
-		re := regexp.MustCompile(`\d+\s+\d+\s+R`)
 		remaining := data[pos:]
-		if loc := re.FindIndex(remaining); loc != nil && loc[0] == 0 {
+		if loc := flattenObjRefRe.FindIndex(remaining); loc != nil && loc[0] == 0 {
 			acroEnd = pos + loc[1]
 		}
 	}

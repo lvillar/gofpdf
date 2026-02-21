@@ -18,7 +18,6 @@ type FieldType int
 const (
 	TypeText     FieldType = iota // single or multi-line text input
 	TypeCheckbox                  // checkbox (on/off)
-	TypeRadio                     // radio button group
 	TypeDropdown                  // dropdown/combo box
 	TypeButton                    // push button
 )
@@ -50,68 +49,42 @@ func NewFormBuilder(pdf *gofpdf.Fpdf) *FormBuilder {
 	return &FormBuilder{pdf: pdf}
 }
 
-// AddTextField adds a text input field to the form.
-func (fb *FormBuilder) AddTextField(name string, page int, x, y, w, h float64) *Field {
-	f := Field{
-		Name:     name,
-		Type:     TypeText,
-		Page:     page,
-		X:        x,
-		Y:        y,
-		W:        w,
-		H:        h,
-		FontSize: 12,
-	}
+// addField appends a field and returns a pointer to it for chaining.
+func (fb *FormBuilder) addField(f Field) *Field {
 	fb.fields = append(fb.fields, f)
 	return &fb.fields[len(fb.fields)-1]
+}
+
+// AddTextField adds a text input field to the form.
+func (fb *FormBuilder) AddTextField(name string, page int, x, y, w, h float64) *Field {
+	return fb.addField(Field{
+		Name: name, Type: TypeText, Page: page,
+		X: x, Y: y, W: w, H: h, FontSize: 12,
+	})
 }
 
 // AddCheckbox adds a checkbox field to the form.
 func (fb *FormBuilder) AddCheckbox(name string, page int, x, y, size float64) *Field {
-	f := Field{
-		Name: name,
-		Type: TypeCheckbox,
-		Page: page,
-		X:    x,
-		Y:    y,
-		W:    size,
-		H:    size,
-	}
-	fb.fields = append(fb.fields, f)
-	return &fb.fields[len(fb.fields)-1]
+	return fb.addField(Field{
+		Name: name, Type: TypeCheckbox, Page: page,
+		X: x, Y: y, W: size, H: size,
+	})
 }
 
 // AddDropdown adds a dropdown/combo box field to the form.
 func (fb *FormBuilder) AddDropdown(name string, page int, x, y, w, h float64, options []string) *Field {
-	f := Field{
-		Name:     name,
-		Type:     TypeDropdown,
-		Page:     page,
-		X:        x,
-		Y:        y,
-		W:        w,
-		H:        h,
-		Options:  options,
-		FontSize: 12,
-	}
-	fb.fields = append(fb.fields, f)
-	return &fb.fields[len(fb.fields)-1]
+	return fb.addField(Field{
+		Name: name, Type: TypeDropdown, Page: page,
+		X: x, Y: y, W: w, H: h, Options: options, FontSize: 12,
+	})
 }
 
 // AddButton adds a push button field to the form.
 func (fb *FormBuilder) AddButton(name string, page int, x, y, w, h float64, label string) *Field {
-	f := Field{
-		Name:  name,
-		Type:  TypeButton,
-		Page:  page,
-		X:     x,
-		Y:     y,
-		W:     w,
-		H:     h,
-		Value: label,
-	}
-	fb.fields = append(fb.fields, f)
-	return &fb.fields[len(fb.fields)-1]
+	return fb.addField(Field{
+		Name: name, Type: TypeButton, Page: page,
+		X: x, Y: y, W: w, H: h, Value: label,
+	})
 }
 
 // SetValue sets the default value for a field. Returns the field for chaining.
