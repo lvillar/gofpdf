@@ -8,6 +8,7 @@
 package sign
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/x509"
@@ -40,12 +41,14 @@ type VisualSignature struct {
 
 // SignatureInfo contains information about an existing signature.
 type SignatureInfo struct {
-	Signer    *x509.Certificate
-	SignedAt  time.Time
-	Reason    string
-	Location  string
-	Valid     bool
-	Errors    []error
+	Signer       *x509.Certificate
+	SignedAt     time.Time
+	Reason       string
+	Location     string
+	Valid        bool
+	Errors       []error
+	digest       []byte // computed byte-range digest (internal)
+	rawSignature []byte // raw signature bytes (internal)
 }
 
 // Sign applies a digital signature to a PDF document.
@@ -77,23 +80,20 @@ func Sign(input io.ReadSeeker, output io.Writer, opts Options) error {
 	}
 
 	// Verify it's a valid PDF
-	_, err = reader.ReadFrom(io.NopCloser(io.NewSectionReader(newBytesReaderAt(data), 0, int64(len(data)))))
+	_, err = reader.ReadFrom(bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("sign: parsing input PDF: %w", err)
 	}
 
-	// Build the signature dictionary
-	sigDict := buildSignatureDict(opts)
+	// Build the signature dictionary properties
+	sigProps := buildSignatureDict(opts)
 
-	// Calculate byte range placeholder size
-	// The signature is embedded as a hex string in the PDF
-	// Reserve space for a typical PKCS#7 signature (8192 bytes = 16384 hex chars)
+	// Reserve space for signature: 8192 bytes = 16384 hex chars
 	sigHexLen := 16384
 
-	// Append an incremental update with the signature
-	var update []byte
-	update = append(update, data...)
-	update, byteRange, sigOffset := appendSignatureUpdate(update, sigDict, sigHexLen)
+	// Build the signature object appended to the PDF
+	// Two-pass approach: first compute layout, then fill actual values
+	update, byteRange, sigOffset := buildSignedPDF(data, sigProps, sigHexLen)
 
 	// Compute digest over the byte ranges
 	hash := crypto.SHA256
@@ -108,12 +108,11 @@ func Sign(input io.ReadSeeker, output io.Writer, opts Options) error {
 		return fmt.Errorf("sign: signing: %w", err)
 	}
 
-	// Encode signature as hex and insert into reserved space
+	// Encode signature as hex
 	sigHex := fmt.Sprintf("%x", signature)
 	if len(sigHex) > sigHexLen {
 		return fmt.Errorf("sign: signature too large (%d > %d)", len(sigHex), sigHexLen)
 	}
-	// Pad with zeros
 	for len(sigHex) < sigHexLen {
 		sigHex += "0"
 	}
@@ -123,33 +122,6 @@ func Sign(input io.ReadSeeker, output io.Writer, opts Options) error {
 
 	_, err = output.Write(update)
 	return err
-}
-
-// Verify checks the digital signatures in a PDF document.
-// Returns information about each signature found.
-func Verify(input io.ReadSeeker) ([]SignatureInfo, error) {
-	data, err := io.ReadAll(input)
-	if err != nil {
-		return nil, fmt.Errorf("sign: reading input: %w", err)
-	}
-
-	doc, err := reader.ReadFrom(io.NopCloser(io.NewSectionReader(newBytesReaderAt(data), 0, int64(len(data)))))
-	if err != nil {
-		return nil, fmt.Errorf("sign: parsing PDF: %w", err)
-	}
-
-	// Search for signature fields in the document
-	var sigs []SignatureInfo
-	for _, page := range doc.Pages() {
-		_ = page // Signature extraction requires parsing AcroForm
-	}
-
-	// Note: Full signature verification requires parsing the AcroForm dictionary,
-	// extracting /Sig fields, and verifying PKCS#7 signatures.
-	// This is a placeholder for the foundation.
-	_ = sigs
-
-	return nil, nil
 }
 
 // buildSignatureDict constructs the PDF signature dictionary string.
@@ -171,37 +143,53 @@ func buildSignatureDict(opts Options) string {
 	return dict
 }
 
-// appendSignatureUpdate appends a signature placeholder to the PDF data.
-// Returns the updated data, byte ranges, and offset of the hex signature.
-func appendSignatureUpdate(data []byte, sigDict string, sigHexLen int) ([]byte, [4]int, int) {
-	// For a basic implementation, we embed the signature dictionary
-	// at the end of the file content, before the final xref/trailer
-
-	// Placeholder for the hex signature
+// buildSignedPDF appends a proper signature dictionary to the PDF data.
+// Returns the complete PDF bytes, the byte range, and the offset of the hex signature.
+func buildSignedPDF(data []byte, sigProps string, sigHexLen int) ([]byte, [4]int, int) {
+	// Zero-filled placeholder
 	placeholder := make([]byte, sigHexLen)
 	for i := range placeholder {
 		placeholder[i] = '0'
 	}
 
-	// Build the signature value object
-	sigObj := fmt.Sprintf("\n%s /ByteRange [0 %%OFFSET1%% %%OFFSET2%% %%LEN2%%] /Contents <%s>",
-		sigDict, string(placeholder))
+	// We need to know the final layout to compute byte ranges.
+	// The signature dict format is:
+	// \n<< {sigProps} /ByteRange [0 {br1} {br2start} {br2len}] /Contents <{hex}> >>
+	//
+	// Two-pass: first estimate, then finalize with correct byte range values.
 
-	sigOffset := len(data) + len(sigObj) - sigHexLen - 1 // position of hex sig in output
+	// Build template with placeholder byte range (use fixed-width numbers for stability)
+	byteRangeStr := fmt.Sprintf("/ByteRange [0 %010d %010d %010d]", 0, 0, 0)
+	sigDictStr := fmt.Sprintf("\n<< %s %s /Contents <%s> >>", sigProps, byteRangeStr, string(placeholder))
 
-	// For this foundation implementation, append the signature data
-	result := make([]byte, len(data)+len(sigObj))
+	// Calculate positions
+	contentsStart := bytes.Index([]byte(sigDictStr), []byte("<"+string(placeholder[:10])))
+	if contentsStart < 0 {
+		// Fallback: search for the hex start
+		contentsStart = len(sigDictStr) - sigHexLen - 4 // approximate
+	}
+	// contentsStart is relative to sigDictStr, add data length for absolute position
+	// The '<' is at data len + contentsStart, hex starts at +1
+	hexAbsOffset := len(data) + contentsStart + 1
+
+	// Byte range: [0, before_hex_start, after_hex_end, remaining]
+	br1End := hexAbsOffset - 1            // just before '<'
+	br2Start := hexAbsOffset + sigHexLen + 1 // just after '>'
+	totalLen := len(data) + len(sigDictStr)
+	br2Len := totalLen - br2Start
+
+	// Now rebuild with actual byte range values
+	byteRangeStr = fmt.Sprintf("/ByteRange [0 %010d %010d %010d]", br1End, br2Start, br2Len)
+	sigDictStr = fmt.Sprintf("\n<< %s %s /Contents <%s> >>", sigProps, byteRangeStr, string(placeholder))
+
+	// Verify total length matches (it should since we use fixed-width numbers)
+	result := make([]byte, len(data)+len(sigDictStr))
 	copy(result, data)
-	copy(result[len(data):], []byte(sigObj))
-
-	// Calculate byte ranges (signature excludes the /Contents hex value)
-	br1End := sigOffset - 1  // before '<'
-	br2Start := sigOffset + sigHexLen + 1 // after '>'
-	br2Len := len(result) - br2Start
+	copy(result[len(data):], []byte(sigDictStr))
 
 	byteRange := [4]int{0, br1End, br2Start, br2Len}
 
-	return result, byteRange, sigOffset
+	return result, byteRange, hexAbsOffset
 }
 
 func escapePDF(s string) string {
@@ -218,22 +206,3 @@ func escapePDF(s string) string {
 	return r
 }
 
-// bytesReaderAt wraps a byte slice as an io.ReaderAt.
-type bytesReaderAt struct {
-	data []byte
-}
-
-func newBytesReaderAt(data []byte) *bytesReaderAt {
-	return &bytesReaderAt{data: data}
-}
-
-func (b *bytesReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
-	if off >= int64(len(b.data)) {
-		return 0, io.EOF
-	}
-	n = copy(p, b.data[off:])
-	if n < len(p) {
-		err = io.EOF
-	}
-	return
-}

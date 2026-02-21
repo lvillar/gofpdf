@@ -85,7 +85,6 @@ func TestSignBasic(t *testing.T) {
 		t.Errorf("signed PDF should be larger: input=%d, output=%d", len(pdfData), output.Len())
 	}
 
-	// Verify the output contains signature markers
 	if !bytes.Contains(output.Bytes(), []byte("/Type /Sig")) {
 		t.Error("expected /Type /Sig in signed PDF")
 	}
@@ -119,11 +118,126 @@ func TestSignRequiresPrivateKey(t *testing.T) {
 	}
 }
 
-func TestVerifyReturnsNoError(t *testing.T) {
+func TestVerifyUnsignedPDF(t *testing.T) {
 	pdfData := generateTestPDF(t)
 
-	_, err := sign.Verify(bytes.NewReader(pdfData))
+	sigs, err := sign.Verify(bytes.NewReader(pdfData))
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
+	if len(sigs) != 0 {
+		t.Errorf("expected no signatures in unsigned PDF, got %d", len(sigs))
+	}
+}
+
+func TestVerifyFindsSignature(t *testing.T) {
+	cert, key := generateTestCert(t)
+	pdfData := generateTestPDF(t)
+
+	var signed bytes.Buffer
+	err := sign.Sign(bytes.NewReader(pdfData), &signed, sign.Options{
+		Certificate: cert,
+		PrivateKey:  key,
+		Reason:      "Approval",
+		Location:    "New York",
+	})
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+
+	sigs, err := sign.Verify(bytes.NewReader(signed.Bytes()))
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	if len(sigs) == 0 {
+		t.Fatal("expected at least 1 signature")
+	}
+
+	sig := sigs[0]
+	if sig.Reason != "Approval" {
+		t.Errorf("reason = %q, want 'Approval'", sig.Reason)
+	}
+	if sig.Location != "New York" {
+		t.Errorf("location = %q, want 'New York'", sig.Location)
+	}
+	if sig.SignedAt.IsZero() {
+		t.Error("expected non-zero signing time")
+	}
+
+	t.Logf("Found signature: reason=%q location=%q time=%v", sig.Reason, sig.Location, sig.SignedAt)
+}
+
+func TestVerifyWithCertificate(t *testing.T) {
+	cert, key := generateTestCert(t)
+	pdfData := generateTestPDF(t)
+
+	var signed bytes.Buffer
+	err := sign.Sign(bytes.NewReader(pdfData), &signed, sign.Options{
+		Certificate: cert,
+		PrivateKey:  key,
+		Reason:      "Contract",
+		Location:    "Office",
+	})
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+
+	sigs, err := sign.VerifyWithCertificate(bytes.NewReader(signed.Bytes()), &key.PublicKey)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+
+	if len(sigs) == 0 {
+		t.Fatal("expected at least 1 signature")
+	}
+
+	sig := sigs[0]
+	if !sig.Valid {
+		t.Errorf("expected valid signature, got errors: %v", sig.Errors)
+	}
+	if sig.Reason != "Contract" {
+		t.Errorf("reason = %q, want 'Contract'", sig.Reason)
+	}
+
+	t.Logf("Verified signature: valid=%v reason=%q", sig.Valid, sig.Reason)
+}
+
+func TestVerifyTamperedPDF(t *testing.T) {
+	cert, key := generateTestCert(t)
+	pdfData := generateTestPDF(t)
+
+	var signed bytes.Buffer
+	err := sign.Sign(bytes.NewReader(pdfData), &signed, sign.Options{
+		Certificate: cert,
+		PrivateKey:  key,
+	})
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+
+	// Tamper with the signed PDF by modifying bytes in the byte range
+	// We modify the PDF header area which is always in the first byte range
+	tampered := make([]byte, len(signed.Bytes()))
+	copy(tampered, signed.Bytes())
+	// Modify byte near the start of the PDF (in the %PDF- header area)
+	// This is within the first byte range and will invalidate the digest
+	if len(tampered) > 50 {
+		tampered[50] ^= 0xFF // flip all bits
+	}
+
+	sigs, err := sign.VerifyWithCertificate(bytes.NewReader(tampered), &key.PublicKey)
+	if err != nil {
+		t.Fatalf("verify tampered: %v", err)
+	}
+
+	if len(sigs) == 0 {
+		t.Fatal("expected signature to be found even in tampered PDF")
+	}
+
+	if sigs[0].Valid {
+		t.Error("expected invalid signature after tampering")
+	}
+
+	t.Logf("Tampered verification: valid=%v errors=%v", sigs[0].Valid, sigs[0].Errors)
 }
