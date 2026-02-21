@@ -3474,6 +3474,26 @@ func (f *Fpdf) Output(w io.Writer) error {
 	return f.err
 }
 
+// AddCatalogEntry adds a raw PDF string to the document catalog dictionary.
+// This is used by extension packages (e.g., form) to add entries like /AcroForm.
+func (f *Fpdf) AddCatalogEntry(entry string) {
+	f.catalogExtra = append(f.catalogExtra, entry)
+}
+
+// AddPageAnnotation adds a raw PDF annotation string to the specified page (1-based).
+// This is used by extension packages (e.g., form) to add widget annotations.
+func (f *Fpdf) AddPageAnnotation(page int, annot string) {
+	if f.pageAnnots == nil {
+		f.pageAnnots = make(map[int][]string)
+	}
+	f.pageAnnots[page] = append(f.pageAnnots[page], annot)
+}
+
+// GetScaleFactor returns the scale factor (points per user unit).
+func (f *Fpdf) GetScaleFactor() float64 {
+	return f.k
+}
+
 func (f *Fpdf) getpagesizestr(sizeStr string) (size SizeType) {
 	if f.err != nil {
 		return
@@ -3905,8 +3925,9 @@ func (f *Fpdf) putpages() {
 			f.outf("/%s [%.2f %.2f %.2f %.2f]", t, pb.X, pb.Y, pb.Wd, pb.Ht)
 		}
 		f.out("/Resources 2 0 R")
-		// Links
-		if len(f.pageLinks[n])+len(f.pageAttachments[n]) > 0 {
+		// Links and annotations
+		extraAnnots := f.pageAnnots[n]
+		if len(f.pageLinks[n])+len(f.pageAttachments[n])+len(extraAnnots) > 0 {
 			var annots fmtBuffer
 			annots.printf("/Annots [")
 			for _, pl := range f.pageLinks[n] {
@@ -3929,6 +3950,10 @@ func (f *Fpdf) putpages() {
 				}
 			}
 			f.putAttachmentAnnotationLinks(&annots, n)
+			// Extra annotations (form widgets, etc.)
+			for _, extra := range extraAnnots {
+				annots.printf(extra)
+			}
 			annots.printf("]")
 			f.out(annots.String())
 		}
@@ -4692,6 +4717,10 @@ func (f *Fpdf) putcatalog() {
 	// Embedded files
 	f.outf("/EmbeddedFiles %s", f.getEmbeddedFiles())
 	f.out(">>")
+	// Extra catalog entries (e.g., AcroForm from form package)
+	for _, extra := range f.catalogExtra {
+		f.out(extra)
+	}
 }
 
 func (f *Fpdf) putheader() {

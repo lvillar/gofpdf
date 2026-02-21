@@ -622,6 +622,8 @@ type Fpdf struct {
 	}
 	spotColorMap           map[string]spotColorType // Map of named ink-based colors
 	userUnderlineThickness float64                  // A custom user underline thickness multiplier.
+	catalogExtra           []string                 // extra lines to add to the catalog dictionary
+	pageAnnots             map[int][]string         // extra annotation strings per page (1-based)
 }
 
 type encType struct {
