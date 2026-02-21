@@ -279,7 +279,7 @@ func (t *ttfParser) ParseName() (err error) {
 				if err != nil {
 					return
 				}
-				s = strings.Replace(s, "\x00", "", -1)
+				s = strings.ReplaceAll(s, "\x00", "")
 				var re *regexp.Regexp
 				if re, err = regexp.Compile("[(){}<> /%[\\]]"); err != nil {
 					return

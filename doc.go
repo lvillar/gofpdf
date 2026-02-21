@@ -75,11 +75,11 @@ Installation
 
 To install the package on your system, run
 
-    go get github.com/jung-kurt/gofpdf
+    go get github.com/lvillar/gofpdf
 
 Later, to receive updates, run
 
-    go get -u -v github.com/jung-kurt/gofpdf/...
+    go get -u -v github.com/lvillar/gofpdf/...
 
 Quick Start
 

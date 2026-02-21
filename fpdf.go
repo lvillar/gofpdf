@@ -32,7 +32,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -1671,9 +1670,9 @@ func (f *Fpdf) AddUTF8Font(familyStr, styleStr, fileStr string) {
 func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
 	if fileStr == "" {
 		if isUTF8 {
-			fileStr = strings.Replace(familyStr, " ", "", -1) + strings.ToLower(styleStr) + ".ttf"
+			fileStr = strings.ReplaceAll(familyStr, " ", "") + strings.ToLower(styleStr) + ".ttf"
 		} else {
-			fileStr = strings.Replace(familyStr, " ", "", -1) + strings.ToLower(styleStr) + ".json"
+			fileStr = strings.ReplaceAll(familyStr, " ", "") + strings.ToLower(styleStr) + ".json"
 		}
 	}
 	if isUTF8 {
@@ -1693,7 +1692,7 @@ func (f *Fpdf) addFont(familyStr, styleStr, fileStr string, isUTF8 bool) {
 		originalSize := ttfStat.Size()
 		Type := "UTF8"
 		var utf8Bytes []byte
-		utf8Bytes, err = ioutil.ReadFile(fileStr)
+		utf8Bytes, err = os.ReadFile(fileStr)
 		if err != nil {
 			f.SetError(err)
 			return
@@ -2045,11 +2044,11 @@ func (f *Fpdf) SetFont(familyStr, styleStr string, size float64) {
 	styleStr = strings.ToUpper(styleStr)
 	f.underline = strings.Contains(styleStr, "U")
 	if f.underline {
-		styleStr = strings.Replace(styleStr, "U", "", -1)
+		styleStr = strings.ReplaceAll(styleStr, "U", "")
 	}
 	f.strikeout = strings.Contains(styleStr, "S")
 	if f.strikeout {
-		styleStr = strings.Replace(styleStr, "S", "", -1)
+		styleStr = strings.ReplaceAll(styleStr, "S", "")
 	}
 	if styleStr == "IB" {
 		styleStr = "BI"
@@ -2454,9 +2453,9 @@ func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
 				}
 			} else {
 
-				txt2 = strings.Replace(txtStr, "\\", "\\\\", -1)
-				txt2 = strings.Replace(txt2, "(", "\\(", -1)
-				txt2 = strings.Replace(txt2, ")", "\\)", -1)
+				txt2 = strings.ReplaceAll(txtStr, "\\", "\\\\")
+				txt2 = strings.ReplaceAll(txt2, "(", "\\(")
+				txt2 = strings.ReplaceAll(txt2, ")", "\\)")
 			}
 			bt := (f.x + dx) * k
 			td := (f.h - (f.y + dy + .5*h + .3*f.fontSize)) * k
@@ -2608,7 +2607,7 @@ func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill 
 		w = f.w - f.rMargin - f.x
 	}
 	wmax := int(math.Ceil((w - 2*f.cMargin) * 1000 / f.fontSize))
-	s := strings.Replace(txtStr, "\r", "", -1)
+	s := strings.ReplaceAll(txtStr, "\r", "")
 	srune := []rune(s)
 
 	// remove extra line breaks
@@ -2790,7 +2789,7 @@ func (f *Fpdf) write(h float64, txtStr string, link int, linkStr string) {
 	cw := f.currentFont.Cw
 	w := f.w - f.rMargin - f.x
 	wmax := (w - 2*f.cMargin) * 1000 / f.fontSize
-	s := strings.Replace(txtStr, "\r", "", -1)
+	s := strings.ReplaceAll(txtStr, "\r", "")
 	var nb int
 	if f.isCurrentUTF8 {
 		nb = len([]rune(s))
@@ -3582,10 +3581,10 @@ func (f *Fpdf) loadfont(r io.Reader) (def fontDefType) {
 
 // Escape special characters in strings
 func (f *Fpdf) escape(s string) string {
-	s = strings.Replace(s, "\\", "\\\\", -1)
-	s = strings.Replace(s, "(", "\\(", -1)
-	s = strings.Replace(s, ")", "\\)", -1)
-	s = strings.Replace(s, "\r", "\\r", -1)
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "(", "\\(")
+	s = strings.ReplaceAll(s, ")", "\\)")
+	s = strings.ReplaceAll(s, "\r", "\\r")
 	return s
 }
 
@@ -3865,7 +3864,7 @@ func (f *Fpdf) replaceAliases() {
 			for n := 1; n <= f.page; n++ {
 				s := f.pages[n].String()
 				if strings.Contains(s, alias) {
-					s = strings.Replace(s, alias, replacement, -1)
+					s = strings.ReplaceAll(s, alias, replacement)
 					f.pages[n].Truncate(0)
 					f.pages[n].WriteString(s)
 				}
@@ -4330,14 +4329,14 @@ func (f *Fpdf) loadFontFile(name string) ([]byte, error) {
 	if f.fontLoader != nil {
 		reader, err := f.fontLoader.Open(name)
 		if err == nil {
-			data, err := ioutil.ReadAll(reader)
+			data, err := io.ReadAll(reader)
 			if closer, ok := reader.(io.Closer); ok {
 				closer.Close()
 			}
 			return data, err
 		}
 	}
-	return ioutil.ReadFile(path.Join(f.fontpath, name))
+	return os.ReadFile(path.Join(f.fontpath, name))
 }
 
 func (f *Fpdf) putimages() {

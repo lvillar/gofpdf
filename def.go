@@ -43,77 +43,97 @@ type gradientType struct {
 	objNum            int
 }
 
+// Orientation specifies the page orientation for the PDF document.
+type Orientation = string
+
 const (
 	// OrientationPortrait represents the portrait orientation.
-	OrientationPortrait = "portrait"
+	OrientationPortrait Orientation = "portrait"
 
 	// OrientationLandscape represents the landscape orientation.
-	OrientationLandscape = "landscape"
+	OrientationLandscape Orientation = "landscape"
 )
+
+// Unit specifies the measurement unit for page dimensions and drawing commands.
+type Unit = string
 
 const (
 	// UnitPoint represents the size unit point
-	UnitPoint = "pt"
+	UnitPoint Unit = "pt"
 	// UnitMillimeter represents the size unit millimeter
-	UnitMillimeter = "mm"
+	UnitMillimeter Unit = "mm"
 	// UnitCentimeter represents the size unit centimeter
-	UnitCentimeter = "cm"
+	UnitCentimeter Unit = "cm"
 	// UnitInch represents the size unit inch
-	UnitInch = "inch"
+	UnitInch Unit = "inch"
 )
+
+// PageSize specifies a named standard page size.
+type PageSize = string
 
 const (
 	// PageSizeA3 represents DIN/ISO A3 page size
-	PageSizeA3 = "A3"
+	PageSizeA3 PageSize = "A3"
 	// PageSizeA4 represents DIN/ISO A4 page size
-	PageSizeA4 = "A4"
+	PageSizeA4 PageSize = "A4"
 	// PageSizeA5 represents DIN/ISO A5 page size
-	PageSizeA5 = "A5"
+	PageSizeA5 PageSize = "A5"
 	// PageSizeLetter represents US Letter page size
-	PageSizeLetter = "Letter"
+	PageSizeLetter PageSize = "Letter"
 	// PageSizeLegal represents US Legal page size
-	PageSizeLegal = "Legal"
+	PageSizeLegal PageSize = "Legal"
+	// PageSizeTabloid represents US Tabloid page size
+	PageSizeTabloid PageSize = "Tabloid"
 )
+
+// Border specifies which borders to draw on a cell.
+type Border = string
 
 const (
 	// BorderNone set no border
-	BorderNone = ""
+	BorderNone Border = ""
 	// BorderFull sets a full border
-	BorderFull = "1"
+	BorderFull Border = "1"
 	// BorderLeft sets the border on the left side
-	BorderLeft = "L"
+	BorderLeft Border = "L"
 	// BorderTop sets the border at the top
-	BorderTop = "T"
+	BorderTop Border = "T"
 	// BorderRight sets the border on the right side
-	BorderRight = "R"
+	BorderRight Border = "R"
 	// BorderBottom sets the border on the bottom
-	BorderBottom = "B"
+	BorderBottom Border = "B"
 )
+
+// LineBreak specifies the line break behavior after a cell.
+type LineBreak = int
 
 const (
 	// LineBreakNone disables linebreak
-	LineBreakNone = 0
+	LineBreakNone LineBreak = 0
 	// LineBreakNormal enables normal linebreak
-	LineBreakNormal = 1
+	LineBreakNormal LineBreak = 1
 	// LineBreakBelow enables linebreak below
-	LineBreakBelow = 2
+	LineBreakBelow LineBreak = 2
 )
+
+// Align specifies the text alignment within a cell.
+type Align = string
 
 const (
 	// AlignLeft left aligns the cell
-	AlignLeft = "L"
+	AlignLeft Align = "L"
 	// AlignRight right aligns the cell
-	AlignRight = "R"
+	AlignRight Align = "R"
 	// AlignCenter centers the cell
-	AlignCenter = "C"
+	AlignCenter Align = "C"
 	// AlignTop aligns the cell to the top
-	AlignTop = "T"
+	AlignTop Align = "T"
 	// AlignBottom aligns the cell to the bottom
-	AlignBottom = "B"
+	AlignBottom Align = "B"
 	// AlignMiddle aligns the cell to the middle
-	AlignMiddle = "M"
+	AlignMiddle Align = "M"
 	// AlignBaseline aligns the cell to the baseline
-	AlignBaseline = "B"
+	AlignBaseline Align = "B"
 )
 
 type colorMode int

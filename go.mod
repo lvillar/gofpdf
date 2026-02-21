@@ -1,6 +1,6 @@
-module github.com/jung-kurt/gofpdf
+module github.com/lvillar/gofpdf
 
-go 1.12
+go 1.23
 
 require (
 	github.com/boombuler/barcode v1.0.0
@@ -9,4 +9,4 @@ require (
 	golang.org/x/image v0.0.0-20190910094157-69e4b8554b2a
 )
 
-replace gofpdf => ./
+require github.com/pkg/errors v0.8.1 // indirect

@@ -39,7 +39,7 @@ func main() {
 			name = filepath.Base(path)
 			ok, name = matchTail(name, ".pdf")
 			if ok {
-				name = strings.Replace(name, "_", " ", -1)
+				name = strings.ReplaceAll(name, "_", " ")
 				ok, showStr = matchHead(name, "Fpdf ")
 				if ok {
 					fmt.Printf("[%s](%s)\n", showStr, path)
