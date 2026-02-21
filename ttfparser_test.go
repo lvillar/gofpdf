@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/lvillar/gopdf"
-	"github.com/lvillar/gopdf/internal/example"
+	"github.com/lvillar/gofpdf"
+	"github.com/lvillar/gofpdf/internal/example"
 )
 
 func ExampleTtfParse() {

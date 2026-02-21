@@ -1,9 +1,9 @@
 package tiff_test
 
 import (
-	"github.com/lvillar/gopdf"
-	"github.com/lvillar/gopdf/contrib/tiff"
-	"github.com/lvillar/gopdf/internal/example"
+	"github.com/lvillar/gofpdf"
+	"github.com/lvillar/gofpdf/contrib/tiff"
+	"github.com/lvillar/gofpdf/internal/example"
 )
 
 // ExampleRegisterFile demonstrates the loading and display of a TIFF image.

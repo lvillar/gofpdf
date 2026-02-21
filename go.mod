@@ -1,4 +1,4 @@
-module github.com/lvillar/gopdf
+module github.com/lvillar/gofpdf
 
 go 1.23
 

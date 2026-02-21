@@ -31,9 +31,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lvillar/gopdf"
-	"github.com/lvillar/gopdf/internal/example"
-	"github.com/lvillar/gopdf/internal/files"
+	"github.com/lvillar/gofpdf"
+	"github.com/lvillar/gofpdf/internal/example"
+	"github.com/lvillar/gofpdf/internal/files"
 )
 
 func init() {
@@ -1567,7 +1567,7 @@ func ExampleFpdf_CellFormat_align() {
 				pdf.CellFormat(170, 257, rec.txt, borderStr, 0, rec.align, false, 0, linkStr)
 				borderStr = ""
 			}
-			linkStr = "https://github.com/lvillar/gopdf"
+			linkStr = "https://github.com/lvillar/gofpdf"
 		}
 	}
 	pdf := gofpdf.New("P", "mm", "A4", "") // A4 210.0 x 297.0
@@ -1775,7 +1775,7 @@ func ExampleFpdf_RegisterImageReader() {
 		wd       = 210
 		ht       = 297
 		fontSize = 15
-		urlStr   = "https://github.com/lvillar/gopdf/blob/master/image/gofpdf.png?raw=true"
+		urlStr   = "https://github.com/lvillar/gofpdf/blob/master/image/gofpdf.png?raw=true"
 		msgStr   = `Images from the web can be easily embedded when a PDF document is generated.`
 	)
 
