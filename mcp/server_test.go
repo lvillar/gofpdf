@@ -255,6 +255,107 @@ func TestServerMultipleRequests(t *testing.T) {
 	}
 }
 
+func TestServerValidateTemplateTool_Valid(t *testing.T) {
+	s := NewServerWithIO(nil, nil)
+	RegisterDefaultTools(s)
+
+	resp := sendRequest(t, s, "tools/call", 100, map[string]interface{}{
+		"name": "validate_template",
+		"arguments": map[string]interface{}{
+			"template": map[string]interface{}{
+				"title": "OK",
+				"pages": []interface{}{
+					map[string]interface{}{
+						"elements": []interface{}{
+							map[string]interface{}{
+								"type": "heading", "text": "Hi", "level": 1,
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error.Message)
+	}
+
+	resultBytes, _ := json.Marshal(resp.Result)
+	if !strings.Contains(string(resultBytes), "valid") {
+		t.Fatalf("expected confirmation that template is valid, got: %s", string(resultBytes))
+	}
+}
+
+func TestServerValidateTemplateTool_Invalid(t *testing.T) {
+	s := NewServerWithIO(nil, nil)
+	RegisterDefaultTools(s)
+
+	resp := sendRequest(t, s, "tools/call", 101, map[string]interface{}{
+		"name": "validate_template",
+		"arguments": map[string]interface{}{
+			"template": map[string]interface{}{
+				"pageSize": "Tabloid",
+				"pages": []interface{}{
+					map[string]interface{}{
+						"elements": []interface{}{
+							map[string]interface{}{"type": "heading", "level": 7},
+							map[string]interface{}{"type": "image"},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error.Message)
+	}
+
+	resultBytes, _ := json.Marshal(resp.Result)
+	resultStr := string(resultBytes)
+
+	for _, expected := range []string{"pageSize", "level", "src"} {
+		if !strings.Contains(resultStr, expected) {
+			t.Errorf("expected result to mention %q, got: %s", expected, resultStr)
+		}
+	}
+}
+
+func TestServerCreatePDFTool_RichInputSchema(t *testing.T) {
+	s := NewServerWithIO(nil, nil)
+	RegisterDefaultTools(s)
+
+	resp := sendRequest(t, s, "tools/list", 102, nil)
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error.Message)
+	}
+
+	result, _ := resp.Result.(map[string]interface{})
+	tools, _ := result["tools"].([]interface{})
+
+	var createPDF map[string]interface{}
+	for _, ti := range tools {
+		tm, _ := ti.(map[string]interface{})
+		if tm["name"] == "create_pdf" {
+			createPDF = tm
+			break
+		}
+	}
+	if createPDF == nil {
+		t.Fatal("create_pdf tool not registered")
+	}
+
+	schemaBytes, _ := json.Marshal(createPDF["inputSchema"])
+	schemaStr := string(schemaBytes)
+
+	for _, expected := range []string{"pageSize", "pages", "elements", "heading", "paragraph", "table", "A4", "Letter"} {
+		if !strings.Contains(schemaStr, expected) {
+			t.Errorf("expected create_pdf inputSchema to mention %q, got: %s", expected, schemaStr)
+		}
+	}
+}
+
 func TestToolAddTool(t *testing.T) {
 	s := NewServerWithIO(nil, nil)
 

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-08
+
+LLM-friendly improvements to the MCP server and the `doctpl` template DSL.
+Fully backward compatible: existing templates and existing MCP clients keep
+working unchanged.
+
+### Added
+
+- **`doctpl.Validate(jsonBytes) ([]ValidationError, error)`** — lint a
+  template without rendering. Returns a structured list of problems
+  (`Path`, `Field`, `Message`) so an LLM (or human) can self-correct
+  before generating a PDF. Companion `ValidateDocument(*Document)` works
+  on already-parsed documents.
+- **`validate_template` MCP tool** — exposes `doctpl.Validate` over the
+  Model Context Protocol so LLM clients (Claude Desktop, etc.) can lint
+  templates in a single round-trip with no PDF written to disk.
+- **Rich `inputSchema` for the `create_pdf` MCP tool** — the JSON Schema
+  now describes every supported field of a `doctpl.Document` (page sizes,
+  units, margins, fonts, colors, page elements, table columns, list items)
+  with descriptions and enums. LLMs can now author templates correctly
+  on the first try instead of guessing field names.
+- **`reader/example_test.go`** — runnable godoc example showing how to
+  read a PDF and inspect its metadata.
+- **`sign/example_test.go`** — runnable godoc example demonstrating the
+  full sign + verify flow with a self-signed ECDSA certificate.
+
 ## [1.0.0] - 2026-05-08
 
 First tagged release of the `lvillar/gofpdf` library. Production-ready.
@@ -60,5 +86,6 @@ is the module path, which is now `github.com/lvillar/gofpdf`.
 - Edge cases in core utilities; removal of dead code; consolidation of
   duplicated logic.
 
-[Unreleased]: https://github.com/lvillar/gofpdf/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/lvillar/gofpdf/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/lvillar/gofpdf/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/lvillar/gofpdf/releases/tag/v1.0.0

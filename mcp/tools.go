@@ -17,6 +17,7 @@ import (
 // RegisterDefaultTools adds all built-in PDF tools to the server.
 func RegisterDefaultTools(s *Server) {
 	s.AddTool(createPDFTool())
+	s.AddTool(validateTemplateTool())
 	s.AddTool(readPDFTool())
 	s.AddTool(readPDFTextTool())
 	s.AddTool(mergePDFsTool())
@@ -28,26 +29,227 @@ func RegisterDefaultTools(s *Server) {
 	s.AddTool(pdfInfoTool())
 }
 
+// docTemplateSchema is the JSON Schema describing a doctpl Document. Exposing
+// this in tool InputSchemas lets LLMs author templates correctly on the first
+// try instead of guessing field names.
+func docTemplateSchema() map[string]interface{} {
+	color := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"r": map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 255},
+			"g": map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 255},
+			"b": map[string]interface{}{"type": "integer", "minimum": 0, "maximum": 255},
+		},
+		"required": []string{"r", "g", "b"},
+	}
+	font := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"family": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"Helvetica", "Courier", "Times"},
+				"description": "Standard PDF font family.",
+			},
+			"style": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"", "B", "I", "BI"},
+				"description": "Empty=regular, B=bold, I=italic, BI=bold italic.",
+			},
+			"size": map[string]interface{}{"type": "number", "description": "Size in points."},
+		},
+	}
+	cellStyle := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"fillColor": color,
+			"textColor": color,
+			"font":      font,
+		},
+	}
+	tableColumn := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"header": map[string]interface{}{"type": "string"},
+			"width":  map[string]interface{}{"type": "number", "description": "Width in document units. 0 (or omitted) = auto."},
+			"align":  map[string]interface{}{"type": "string", "enum": []string{"L", "C", "R"}},
+		},
+		"required": []string{"header"},
+	}
+	element := map[string]interface{}{
+		"type":        "object",
+		"description": "A single visual block on a page. The 'type' field selects which other fields apply.",
+		"properties": map[string]interface{}{
+			"type": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"heading", "paragraph", "text", "table", "image", "line", "rect", "spacer", "hr", "list"},
+				"description": "Element kind.",
+			},
+			"text":  map[string]interface{}{"type": "string", "description": "Used by heading, paragraph, text."},
+			"level": map[string]interface{}{"type": "integer", "minimum": 1, "maximum": 6, "description": "Heading level (1=largest)."},
+			"align": map[string]interface{}{"type": "string", "enum": []string{"L", "C", "R"}},
+			"font":  font,
+			"color": color,
+
+			"columns":     map[string]interface{}{"type": "array", "items": tableColumn, "description": "Table columns."},
+			"rows":        map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}}, "description": "Table data rows; each row must have one cell per column."},
+			"headerStyle": cellStyle,
+			"cellStyle":   cellStyle,
+
+			"src":    map[string]interface{}{"type": "string", "description": "Image file path or URL."},
+			"x":      map[string]interface{}{"type": "number"},
+			"y":      map[string]interface{}{"type": "number"},
+			"width":  map[string]interface{}{"type": "number"},
+			"height": map[string]interface{}{"type": "number"},
+
+			"x1": map[string]interface{}{"type": "number"},
+			"y1": map[string]interface{}{"type": "number"},
+			"x2": map[string]interface{}{"type": "number"},
+			"y2": map[string]interface{}{"type": "number"},
+
+			"spacerHeight": map[string]interface{}{"type": "number", "description": "Vertical whitespace for spacer."},
+			"lineWidth":    map[string]interface{}{"type": "number"},
+
+			"items":   map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List items."},
+			"ordered": map[string]interface{}{"type": "boolean", "description": "Use numbers (1. 2. 3.) instead of bullets."},
+			"bullet":  map[string]interface{}{"type": "string", "description": "Custom bullet character for unordered lists."},
+
+			"fillColor": color,
+			"border":    map[string]interface{}{"type": "boolean"},
+		},
+		"required": []string{"type"},
+	}
+	page := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"size":     map[string]interface{}{"type": "string", "description": "Per-page override of pageSize."},
+			"elements": map[string]interface{}{"type": "array", "items": element},
+		},
+		"required": []string{"elements"},
+	}
+	return map[string]interface{}{
+		"type":        "object",
+		"description": "Declarative PDF document. Top-level fields configure the document; 'pages' contains the visual content.",
+		"properties": map[string]interface{}{
+			"title":    map[string]interface{}{"type": "string"},
+			"author":   map[string]interface{}{"type": "string"},
+			"subject":  map[string]interface{}{"type": "string"},
+			"pageSize": map[string]interface{}{"type": "string", "enum": []string{"A4", "Letter", "Legal"}, "description": "Default page size."},
+			"unit":     map[string]interface{}{"type": "string", "enum": []string{"mm", "cm", "in", "pt"}, "description": "Measurement unit for sizes/positions (default: mm)."},
+			"margin": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"top":    map[string]interface{}{"type": "number"},
+					"right":  map[string]interface{}{"type": "number"},
+					"bottom": map[string]interface{}{"type": "number"},
+					"left":   map[string]interface{}{"type": "number"},
+				},
+			},
+			"font": font,
+			"header": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"text":  map[string]interface{}{"type": "string"},
+					"align": map[string]interface{}{"type": "string", "enum": []string{"L", "C", "R"}},
+					"font":  font,
+					"color": color,
+				},
+			},
+			"footer": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"text":  map[string]interface{}{"type": "string", "description": "Supports '{page}' placeholder for current page number."},
+					"align": map[string]interface{}{"type": "string", "enum": []string{"L", "C", "R"}},
+					"font":  font,
+					"color": color,
+				},
+			},
+			"pages": map[string]interface{}{"type": "array", "items": page, "description": "One or more pages of content. Required."},
+		},
+		"required": []string{"pages"},
+	}
+}
+
 func createPDFTool() Tool {
 	return Tool{
-		Name:        "create_pdf",
-		Description: "Create a PDF document from a JSON template. The template supports headings, paragraphs, tables, images, lists, horizontal rules, and spacers. Returns the PDF as base64.",
+		Name: "create_pdf",
+		Description: "Create a PDF document from a declarative JSON template. " +
+			"Templates support headings, paragraphs, tables, images, lists, lines, rects, spacers, and horizontal rules. " +
+			"For an example invoice, see the doctpl.Render godoc. Returns the PDF as base64 by default; pass outputPath to write to disk instead. " +
+			"Use validate_template first to lint a template without rendering.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"template": map[string]interface{}{
-					"type":        "object",
-					"description": "JSON document template with title, pageSize, pages, and elements",
-				},
+				"template": docTemplateSchema(),
 				"outputPath": map[string]interface{}{
 					"type":        "string",
-					"description": "Optional file path to save the PDF. If omitted, returns base64.",
+					"description": "Optional file path to save the PDF. If omitted, the PDF is returned as base64 in the response.",
 				},
 			},
 			"required": []string{"template"},
 		},
 		Handler: handleCreatePDF,
 	}
+}
+
+func validateTemplateTool() Tool {
+	return Tool{
+		Name: "validate_template",
+		Description: "Validate a doctpl JSON template without rendering. " +
+			"Returns either a confirmation that the template is valid or a structured list of problems " +
+			"(path, field, message) so an LLM can self-correct before calling create_pdf.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"template": docTemplateSchema(),
+			},
+			"required": []string{"template"},
+		},
+		Handler: handleValidateTemplate,
+	}
+}
+
+func handleValidateTemplate(args map[string]interface{}) (ToolResult, error) {
+	templateData, ok := args["template"]
+	if !ok {
+		return ToolResult{}, fmt.Errorf("missing 'template' argument")
+	}
+
+	jsonBytes, err := json.Marshal(templateData)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("encoding template: %w", err)
+	}
+
+	errs, err := doctpl.Validate(jsonBytes)
+	if err != nil {
+		return ToolResult{
+			Content: []ContentBlock{{
+				Type: "text",
+				Text: fmt.Sprintf("Template is not valid JSON: %v", err),
+			}},
+			IsError: true,
+		}, nil
+	}
+
+	if len(errs) == 0 {
+		return ToolResult{
+			Content: []ContentBlock{{
+				Type: "text",
+				Text: "Template is valid. You can pass it to create_pdf.",
+			}},
+		}, nil
+	}
+
+	report := map[string]interface{}{
+		"valid":  false,
+		"errors": errs,
+	}
+	out, _ := json.MarshalIndent(report, "", "  ")
+	return ToolResult{
+		Content: []ContentBlock{{
+			Type: "text",
+			Text: fmt.Sprintf("Template has %d validation error(s):\n%s", len(errs), string(out)),
+		}},
+	}, nil
 }
 
 func handleCreatePDF(args map[string]interface{}) (ToolResult, error) {
