@@ -23,3 +23,7 @@ coverage.html
 
 # macOS
 .DS_Store
+
+# AI coding assistant local context (kept out of the repo)
+CLAUDE.md
+.claude/
