@@ -2969,7 +2969,7 @@ func (f *Fpdf) write(h float64, txtStr string, link int, linkStr string) {
 			sep = i
 		}
 		l += float64(cw[int(c)])
-		if f.isCurrentUTF8 && i > j {
+		if f.kerning && f.isCurrentUTF8 && i > j {
 			l += float64(f.lineExtra([]rune(s)[i-1], c, true))
 		} else {
 			l += float64(f.lineExtra(0, c, false))

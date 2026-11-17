@@ -11,9 +11,10 @@ A comprehensive PDF library for Go — generate, read, merge, fill forms, sign, 
 
 ### PDF Generation (core)
 - UTF-8 TrueType fonts and right-to-left language support
+- Pair kerning (GPOS) and letter spacing: text measured and spaced the way a browser does
 - Choice of measurement unit, page format and margins
 - Page header/footer management, automatic page breaks
-- Text, drawing, images (JPEG, PNG, GIF, TIFF, SVG paths)
+- Text, drawing, images (JPEG, PNG, GIF, TIFF, SVG paths, stroked or filled)
 - Colors, gradients, alpha channel transparency
 - Outline bookmarks, internal/external links
 - Lines, Bezier curves, arcs, ellipses, rotation, scaling, clipping
@@ -89,6 +90,43 @@ func main() {
     pdf.OutputFileAndClose("hello.pdf")
 }
 ```
+
+### Kerning and Letter Spacing
+
+Fonts store how much closer pairs such as "AV" or "To" should sit. Enable
+kerning and the text is measured and written the way a browser or a word
+processor does it, so a PDF can match an HTML design to the tenth of a
+millimeter:
+
+```go
+pdf.AddUTF8Font("inter", "", "Inter-Regular.ttf")
+pdf.SetFont("inter", "", 12)
+pdf.SetKerning(true)        // pair kerning from the font's GPOS table
+pdf.SetCharSpacing(-0.1)    // letter spacing, in the unit of the document
+w := pdf.GetStringWidth("AVATAR") // measured with kerning and spacing
+pdf.Text(200-w, 20, "AVATAR")     // right-aligned at x = 200
+```
+
+Kerning is off by default so that existing documents keep their layout. It
+applies to `Text`, `Cell`, `CellFormat`, `MultiCell` and `Write`, and to
+alignment, justification, underlines and line breaking.
+
+### Draw an SVG Logo
+
+```go
+logo, err := gofpdf.SVGBasicFileParse("logo.svg")
+if err != nil {
+    log.Fatal(err)
+}
+pdf.SetFillColor(36, 49, 101)
+pdf.SetXY(15, 14)
+pdf.SVGBasicDraw(&logo, 40/logo.Wd, "F") // 40 mm wide, filled
+```
+
+`SVGBasicParse` reads the `<path>` elements of the document (every path
+command, including arcs and smooth curves) and takes the size from `width`
+and `height` or from the `viewBox`. Styles, transformations and other shapes
+are not read: set the colors on the `Fpdf` before drawing.
 
 ### Read a PDF
 
