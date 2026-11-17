@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Fpdf.SVGBasicDraw(sb, scale, styleStr)`** — paints a basic SVG image
+  building each of its paths as a single PDF path, so that it can be filled
+  (`"F"`, `"F*"`, `"DF"`, …). `SVGBasicWrite` strokes every segment on its
+  own and cannot fill, which ruled out logos and other filled shapes.
+- **All the SVG path commands in `SVGBasicParse`** — smooth curves (`S`,
+  `s`, `T`, `t`) and elliptical arcs (`A`, `a`) are now understood. They are
+  returned as the `C` and `Q` segments they stand for, so existing code that
+  walks `SVGBasicType.Segments` keeps working.
+- **`viewBox` in `SVGBasicParse`** — a document without `width` and
+  `height` takes its size from the `viewBox`, with the path coordinates
+  measured from its top left corner. Documents that do have `width` and
+  `height` are read exactly as before.
+
+### Fixed
+
+- `SVGBasicParse` rejected path data written without optional separators
+  (`M1.5.5-2`, `a10 10 0 01-10 10`), which is how optimized SVG files are
+  saved.
+- `SVGBasicParse` measured a relative command that follows a closepath
+  (`zm1 1`) from the last point drawn instead of from the start of the
+  closed subpath.
+
 ## [1.1.0] - 2026-05-08
 
 LLM-friendly improvements to the MCP server and the `doctpl` template DSL.

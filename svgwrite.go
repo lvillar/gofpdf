@@ -83,3 +83,71 @@ func (f *Fpdf) SVGBasicWrite(sb *SVGBasicType, scale float64) {
 		}
 	}
 }
+
+// SVGBasicDraw paints the paths encoded in the basic SVG image specified by
+// sb. Unlike SVGBasicWrite(), which strokes every segment on its own, this
+// method builds each path of the image as a single PDF path, so that it can be
+// filled: this is the method to use for logos and other filled shapes.
+//
+// The scale value is used to convert the coordinates in the path to the unit
+// of measure specified in New(). The current position (as set with a call to
+// SetXY()) is used as the origin of the image, and it is left unchanged.
+//
+// styleStr can be "F" for filled, "D" for outlined only, or "DF" or "FD" for
+// outlined and filled, with the same meaning and the same additional values
+// as in DrawPath(): "F*", for instance, fills with the even-odd rule. Filling
+// uses the current fill color (as set with SetFillColor()); outlining uses the
+// current draw color, line width and cap and join styles.
+func (f *Fpdf) SVGBasicDraw(sb *SVGBasicType, scale float64, styleStr string) {
+	originX, originY := f.GetXY()
+	xval := func(v float64) float64 {
+		return originX + scale*v
+	}
+	yval := func(v float64) float64 {
+		return originY + scale*v
+	}
+	for j := 0; j < len(sb.Segments) && f.Ok(); j++ {
+		// Current point and start of the current subpath, in path units
+		var x, y, startX, startY float64
+		path := sb.Segments[j]
+		for k := 0; k < len(path) && f.Ok(); k++ {
+			arg := path[k].Arg
+			switch path[k].Cmd {
+			case 'M':
+				x, y = arg[0], arg[1]
+				startX, startY = x, y
+				f.MoveTo(xval(x), yval(y))
+			case 'L':
+				x, y = arg[0], arg[1]
+				f.LineTo(xval(x), yval(y))
+			case 'H':
+				x = arg[0]
+				f.LineTo(xval(x), yval(y))
+			case 'V':
+				y = arg[0]
+				f.LineTo(xval(x), yval(y))
+			case 'C':
+				f.CurveBezierCubicTo(xval(arg[0]), yval(arg[1]), xval(arg[2]), yval(arg[3]),
+					xval(arg[4]), yval(arg[5]))
+				x, y = arg[4], arg[5]
+			case 'Q':
+				// PDF has no quadratic curves: this is the same curve as a
+				// cubic one
+				f.CurveBezierCubicTo(
+					xval(x+2*(arg[0]-x)/3), yval(y+2*(arg[1]-y)/3),
+					xval(arg[2]+2*(arg[0]-arg[2])/3), yval(arg[3]+2*(arg[1]-arg[3])/3),
+					xval(arg[2]), yval(arg[3]))
+				x, y = arg[2], arg[3]
+			case 'Z':
+				f.ClosePath()
+				x, y = startX, startY
+			default:
+				f.SetErrorf("Unexpected path command '%c'", path[k].Cmd)
+			}
+		}
+		if len(path) > 0 && f.Ok() {
+			f.DrawPath(styleStr)
+		}
+	}
+	f.SetXY(originX, originY)
+}
