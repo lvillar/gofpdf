@@ -755,6 +755,10 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	}
 	// Start new page
 	f.beginpage(orientationStr, size)
+	if f.charSpacing != 0 {
+		// Each page starts without character spacing
+		f.outf("%.3f Tc", f.charSpacing*f.k)
+	}
 	// 	Set line cap style to current value
 	// f.out("2 J")
 	f.outf("%d J", f.capStyle)
@@ -942,13 +946,15 @@ func (f *Fpdf) GetTextColor() (int, int, int) {
 }
 
 // GetStringWidth returns the length of a string in user units. A font must be
-// currently selected.
+// currently selected. The length includes the kerning between the characters
+// of the string and the spacing after each one of them, if they have been set
+// with SetKerning() and SetCharSpacing().
 func (f *Fpdf) GetStringWidth(s string) float64 {
 	if f.err != nil {
 		return 0
 	}
-	w := f.GetStringSymbolWidth(s)
-	return float64(w) * f.fontSize / 1000
+	w, count := f.stringSymbolWidth(s)
+	return float64(w)*f.fontSize/1000 + float64(count)*f.charSpacing
 }
 
 // GetStringSymbolWidth returns the length of a string in glyf units. A font must be
@@ -957,9 +963,20 @@ func (f *Fpdf) GetStringSymbolWidth(s string) int {
 	if f.err != nil {
 		return 0
 	}
-	w := 0
+	w, count := f.stringSymbolWidth(s)
+	if f.charSpacing != 0 && f.fontSize != 0 {
+		w += int(math.Round(float64(count) * f.charSpacing * 1000 / f.fontSize))
+	}
+	return w
+}
+
+// stringSymbolWidth returns the length of a string in glyph units, with the
+// kerning between its characters but without the spacing set with
+// SetCharSpacing(), and the number of characters that the spacing applies to.
+func (f *Fpdf) stringSymbolWidth(s string) (w, count int) {
 	if f.isCurrentUTF8 {
 		unicode := []rune(s)
+		count = len(unicode)
 		for _, char := range unicode {
 			intChar := int(char)
 			if len(f.currentFont.Cw) >= intChar && f.currentFont.Cw[intChar] > 0 {
@@ -981,9 +998,24 @@ func (f *Fpdf) GetStringSymbolWidth(s string) int {
 				break
 			}
 			w += f.currentFont.Cw[ch]
+			count++
 		}
 	}
-	return w
+	return
+}
+
+// lineExtra returns what kerning and character spacing add to the advance of
+// a character when text is broken into lines, in glyph units: the kerning with
+// the character before it in the line, if it has one, and the spacing after
+// it.
+func (f *Fpdf) lineExtra(prev, char rune, hasPrev bool) (extra int) {
+	if hasPrev {
+		extra = f.pairKerning(prev, char)
+	}
+	if f.charSpacing != 0 && f.fontSize != 0 {
+		extra += int(math.Round(f.charSpacing * 1000 / f.fontSize))
+	}
+	return
 }
 
 // SetLineWidth defines the line width. By default, the value equals 0.2 mm.
@@ -2246,10 +2278,8 @@ func (f *Fpdf) Text(x, y float64, txtStr string) {
 // Kerning is disabled by default, so that the layout of existing documents
 // does not change. When it is enabled, it is applied to the text written with
 // Text(), Cell(), CellFormat(), MultiCell() and Write() and it is taken into
-// account by GetStringWidth(), in alignment, in justification and in
-// underlines. The breaking of text into lines (in MultiCell(), Write(),
-// SplitText() and SplitLines()) still measures the characters one by one, so a
-// line can break slightly before it needs to.
+// account by GetStringWidth(), in alignment, in justification, in underlines
+// and when text is broken into lines.
 //
 // Kerning is read from the "kern" feature of the GPOS table of UTF-8 fonts
 // (those loaded with AddUTF8Font() or AddUTF8FontFromBytes()). It has no
@@ -2297,6 +2327,23 @@ func (f *Fpdf) kernedTextArray(txtStr string, spaceShift float64) string {
 	}
 	sb.WriteByte(']')
 	return sb.String()
+}
+
+// SetCharSpacing sets the space that is added after each character of the
+// text that follows, known as letter spacing or tracking. space is expressed
+// in the unit of measure specified in New(); a negative value brings the
+// characters closer together and zero restores the normal spacing. The method
+// can be called before the first page is created and the value is retained
+// from page to page.
+//
+// The spacing is added after every character, the last one of a string
+// included. GetStringWidth() takes it into account, and so do alignment,
+// underlines and the breaking of text into lines.
+func (f *Fpdf) SetCharSpacing(space float64) {
+	f.charSpacing = space
+	if f.page > 0 {
+		f.outf("%.3f Tc", space*f.k)
+	}
 }
 
 // SetWordSpacing sets spacing between words of following text. See the
@@ -2625,7 +2672,7 @@ func (f *Fpdf) SplitLines(txt []byte, w float64) [][]byte {
 	l := 0
 	for i < nb {
 		c := s[i]
-		l += cw[c]
+		l += cw[c] + f.lineExtra(0, rune(c), false)
 		if c == ' ' || c == '\t' || c == '\n' {
 			sep = i
 		}
@@ -2798,6 +2845,11 @@ func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill 
 		} else if cw[int(c)] != 65535 { //Marker width 65535 used for zero width symbols
 			l += cw[int(c)]
 		}
+		if f.isCurrentUTF8 && i > j {
+			l += f.lineExtra(srune[i-1], c, true)
+		} else {
+			l += f.lineExtra(0, c, false)
+		}
 		if l > wmax {
 			// Automatic line break
 			if sep == -1 {
@@ -2917,6 +2969,11 @@ func (f *Fpdf) write(h float64, txtStr string, link int, linkStr string) {
 			sep = i
 		}
 		l += float64(cw[int(c)])
+		if f.isCurrentUTF8 && i > j {
+			l += float64(f.lineExtra([]rune(s)[i-1], c, true))
+		} else {
+			l += float64(f.lineExtra(0, c, false))
+		}
 		if l > wmax {
 			// Automatic line break
 			if sep == -1 {

@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alignment, justification and underlines measure the kerned text. Widths
   match the ones Chrome (HarfBuzz) computes for the same font. It is off by
   default: existing documents keep their layout byte for byte.
+- **`Fpdf.SetCharSpacing(space)`** — letter spacing (tracking): space added
+  after each character, in the unit of the document, negative to tighten.
+  It is retained from page to page and `GetStringWidth`, alignment and
+  underlines take it into account. It works with every kind of font.
+- **Line breaking aware of kerning and letter spacing** — `MultiCell`,
+  `Write`, `SplitText` and `SplitLines` measure the text as it will be
+  written, so a line with letter spacing no longer runs past the edge of its
+  cell and kerned text breaks where it really ends.
 - **`Fpdf.SVGBasicDraw(sb, scale, styleStr)`** — paints a basic SVG image
   building each of its paths as a single PDF path, so that it can be filled
   (`"F"`, `"F*"`, `"DF"`, …). `SVGBasicWrite` strokes every segment on its

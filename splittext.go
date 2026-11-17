@@ -26,6 +26,11 @@ func (f *Fpdf) SplitText(txt string, w float64) (lines []string) {
 	for i < nb {
 		c := s[i]
 		l += cw[c]
+		if i > j {
+			l += f.lineExtra(s[i-1], c, true)
+		} else {
+			l += f.lineExtra(0, c, false)
+		}
 		if unicode.IsSpace(c) || isChinese(c) {
 			sep = i
 		}

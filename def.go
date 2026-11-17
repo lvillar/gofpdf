@@ -521,6 +521,7 @@ type Fpdf struct {
 	isCurrentUTF8    bool                       // is current font used in utf-8 mode
 	isRTL            bool                       // is is right to left mode enabled
 	kerning          bool                       // is pair kerning applied to UTF-8 fonts
+	charSpacing      float64                    // space added after each character
 	page             int                        // current page number
 	n                int                        // current object number
 	offsets          []int                      // array of object offsets
