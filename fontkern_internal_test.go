@@ -186,3 +186,194 @@ func TestPairKerning_tableThatExpandsTooMuch(t *testing.T) {
 		t.Errorf("got kerning from a table that lists 1.3 million glyphs in %d bytes", len(table))
 	}
 }
+
+// The offsets of a table can all point to the same data. Here 200 lookups are
+// the same lookup, whose 2000 subtables are the same subtable: the 5 KB of
+// the table stand for 400000 subtables. Each lookup and each subtable counts
+// against the limit, so the table is given up instead of being expanded.
+func TestPairKerning_sharedSubtablesAreNotMultiplied(t *testing.T) {
+	const lookups, subtables, class1Count, class2Count = 200, 2000, 20, 25
+	var table []byte
+	add := func(vals ...int) {
+		table = append(table, words(vals...)...)
+	}
+	// Header: feature list at 10; the position of the lookup list is filled
+	// in below
+	add(1, 0, 0, 10, 0)
+	// Feature list with one feature, "kern", that uses every lookup
+	add(1, 0x6B65, 0x726E, 8)
+	add(0, lookups)
+	for j := 0; j < lookups; j++ {
+		add(j)
+	}
+	// Lookup list: every lookup is the one that follows the list
+	table[8], table[9] = byte(len(table)>>8), byte(len(table))
+	add(lookups)
+	for j := 0; j < lookups; j++ {
+		add(2 + 2*lookups)
+	}
+	// Extension lookup: every subtable is the one that follows the lookup
+	add(9, 0, subtables)
+	for j := 0; j < subtables; j++ {
+		add(6 + 2*subtables)
+	}
+	// Extension: a pair adjustment 8 bytes ahead
+	add(1, 2, 0, 8)
+	// Pairs by class with its values, an empty class definition (used for
+	// both glyphs) and an empty coverage
+	values := class1Count * class2Count
+	add(2, 16+2*values+6, 4, 0, 16+2*values, 16+2*values, class1Count, class2Count)
+	for j := 0; j < values; j++ {
+		add(-50)
+	}
+	add(1, 0, 0)
+	add(1, 0)
+	if kern := parsePairKerning(table); kern != nil {
+		count := 0
+		for _, lookup := range kern.lookups {
+			count += len(lookup)
+		}
+		t.Errorf("a table of %d bytes was expanded into %d subtables", len(table), count)
+	}
+}
+
+// 5000 features named "kern" are the same feature, which lists 15000 lookups:
+// 75 million entries to go through in a table of 60 KB.
+func TestPairKerning_sharedFeaturesAreNotMultiplied(t *testing.T) {
+	const features, indexes = 5000, 15000
+	var table []byte
+	add := func(vals ...int) {
+		table = append(table, words(vals...)...)
+	}
+	// Header: feature list at 10; the position of the lookup list is filled
+	// in below
+	add(1, 0, 0, 10, 0)
+	// Feature list: every feature is the one that follows the list
+	add(features)
+	for j := 0; j < features; j++ {
+		add(0x6B65, 0x726E, 2+6*features)
+	}
+	// Feature: it uses lookup 0 again and again
+	add(0, indexes)
+	for j := 0; j < indexes; j++ {
+		add(0)
+	}
+	// Lookup list with one lookup at 4: a pair adjustment whose subtable, at
+	// 8, lists the pair of glyphs 10 and 20
+	table[8], table[9] = byte(len(table)>>8), byte(len(table))
+	add(1, 4)
+	add(2, 0, 1, 8)
+	add(1, 18, 4, 0, 1, 12)
+	add(1, 20, -50)
+	add(1, 1, 10)
+	if kern := parsePairKerning(table); kern != nil {
+		t.Errorf("a table of %d bytes that lists %d lookups was read to the end", len(table), features*indexes)
+	}
+}
+
+// 9999 lookups are the same lookup, with 20000 subtables of a kind that is
+// not read: 200 million entries to skip, in a table of 80 KB, before reaching
+// the last lookup, which is the one with the kerning.
+func TestPairKerning_sharedLookupsAreNotMultiplied(t *testing.T) {
+	const lookups, subtables = 10000, 20000
+	var table []byte
+	add := func(vals ...int) {
+		table = append(table, words(vals...)...)
+	}
+	add(1, 0, 0, 10, 0)
+	add(1, 0x6B65, 0x726E, 8)
+	add(0, lookups)
+	for j := 0; j < lookups; j++ {
+		add(j)
+	}
+	// Lookup list: all the lookups but the last one are the one that follows
+	// the list
+	table[8], table[9] = byte(len(table)>>8), byte(len(table))
+	shared := 2 + 2*lookups
+	last := shared + 6 + 2*subtables + 8
+	add(lookups)
+	for j := 0; j < lookups-1; j++ {
+		add(shared)
+	}
+	add(last)
+	// A single adjustment lookup (type 1), which is not pair kerning: every
+	// subtable is the one that follows the lookup
+	add(1, 0, subtables)
+	for j := 0; j < subtables; j++ {
+		add(6 + 2*subtables)
+	}
+	add(1, 0, 0, 0)
+	// The last lookup: a pair adjustment whose subtable, at 8, lists the
+	// pair of glyphs 10 and 20
+	add(2, 0, 1, 8)
+	add(1, 18, 4, 0, 1, 12)
+	add(1, 20, -50)
+	add(1, 1, 10)
+	if kern := parsePairKerning(table); kern != nil {
+		t.Errorf("a table of %d bytes with %d subtables was read to the end", len(table), (lookups-1)*subtables)
+	}
+}
+
+// A font can have kerning that applies only to one language: the pair of
+// this table gets -50 for every language and 7 less in Catalan. Text is
+// written without stating its language, so it gets the kerning of the
+// default language system of each script.
+func TestPairKerning_languageSpecificKerningIsLeftOut(t *testing.T) {
+	var table []byte
+	add := func(vals ...int) {
+		table = append(table, words(vals...)...)
+	}
+	// 0: header: script list at 10, feature list at 44, lookup list at 70
+	add(1, 0, 10, 44, 70)
+	// 10: script list: "latn" at 10+8
+	add(1, 0x6C61, 0x746E, 8)
+	// 18: script: default language system at 18+10, and "CAT " at 18+18
+	add(10, 1, 0x4341, 0x5420, 18)
+	// 28: default language system: no required feature, feature 0
+	add(0, 0xFFFF, 1, 0)
+	// 36: Catalan: no required feature, feature 1
+	add(0, 0xFFFF, 1, 1)
+	// 44: feature list: two features "kern", at 44+14 and 44+20
+	add(2, 0x6B65, 0x726E, 14, 0x6B65, 0x726E, 20)
+	// 58: feature 0: lookup 0
+	add(0, 1, 0)
+	// 64: feature 1: lookup 1
+	add(0, 1, 1)
+	// 70: lookup list: lookups at 70+6 and 70+38
+	add(2, 6, 38)
+	// 76: lookup 0: glyphs 10 and 20, -50
+	add(2, 0, 1, 8)
+	add(1, 18, 4, 0, 1, 12)
+	add(1, 20, -50)
+	add(1, 1, 10)
+	// 108: lookup 1: glyphs 10 and 20, -7
+	add(2, 0, 1, 8)
+	add(1, 18, 4, 0, 1, 12)
+	add(1, 20, -7)
+	add(1, 1, 10)
+	kern := parsePairKerning(table)
+	if kern == nil {
+		t.Fatal("no kerning was read")
+	}
+	if got := kern.adjustment(10, 20); got != -50 {
+		t.Errorf("got %d, want -50", got)
+	}
+}
+
+// Counts and offsets at the top of their range must not overflow the
+// arithmetic of a 32-bit platform (run these tests with GOARCH=386).
+func TestPairKerning_valuesAtTheTopOfTheirRange(t *testing.T) {
+	table := kerningFixture()
+	// 146 and 148: the numbers of classes of the subtable by class
+	table[146], table[147], table[148], table[149] = 0xFF, 0xFF, 0xFF, 0xFF
+	if kern := parsePairKerning(table); kern != nil {
+		kern.adjustment(12, 22)
+	}
+	table = kerningFixture()
+	// 210: the 32-bit offset of the extension, measured from 206: the
+	// subtable would be at the last position that fits in 32 bits
+	table[210], table[211], table[212], table[213] = 0x7F, 0xFF, 0xFF, 0x31
+	if kern := parsePairKerning(table); kern != nil {
+		kern.adjustment(10, 20)
+	}
+}

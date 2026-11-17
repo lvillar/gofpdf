@@ -269,3 +269,159 @@ func TestSetKerning_lineBreaking(t *testing.T) {
 		}
 	})
 }
+
+// A template is drawn with the spacing it was built with, not with the one
+// of the page that uses it.
+func TestSetCharSpacing_notInheritedByTemplates(t *testing.T) {
+	pdf := newHelveticaPage()
+	tpl := pdf.CreateTemplate(func(tpl *gofpdf.Tpl) {
+		tpl.SetFont("Helvetica", "", 10)
+		tpl.Text(10, 10, "LETTERHEAD")
+	})
+	pdf.UseTemplate(tpl)
+	pdf.SetCharSpacing(3)
+	pdf.UseTemplate(tpl)
+	if pdf.Err() {
+		t.Fatalf("UseTemplate: %v", pdf.Error())
+	}
+	content := pageContent(t, pdf)
+	uses := strings.Split(content, " cm\n")
+	if len(uses) != 3 {
+		t.Fatalf("the template is used %d times, want 2:\n%s", len(uses)-1, content)
+	}
+	if strings.HasPrefix(uses[1], "0 Tc\n") {
+		t.Errorf("without spacing nothing has to be reset:\n%s", content)
+	}
+	if !strings.HasPrefix(uses[2], "0 Tc\n/TPL") {
+		t.Errorf("the spacing is not reset before the template is drawn:\n%s", content)
+	}
+}
+
+func TestSetCharSpacing_notInheritedByImportedPages(t *testing.T) {
+	pdf := newHelveticaPage()
+	pdf.SetCharSpacing(3)
+	pdf.UseImportedTemplate("/GOFPDITPL1", 1, 1, 0, 0)
+	content := pageContent(t, pdf)
+	if want := " 0 Tc q "; !strings.Contains(content, want) {
+		t.Errorf("the spacing is not reset before the imported page is drawn:\n%s", content)
+	}
+}
+
+// The header and the footer are not part of the text that is being written:
+// they are drawn without its spacing, which is back in effect after the
+// header of the new page.
+func TestSetCharSpacing_headerAndFooter(t *testing.T) {
+	pdf := newHelveticaPage()
+	pdf.SetHeaderFunc(func() { pdf.Text(10, 10, "HEAD") })
+	pdf.SetFooterFunc(func() { pdf.Text(10, 90, "FOOT") })
+	pdf.SetCharSpacing(2)
+	pdf.Text(10, 50, "BODY1")
+	pdf.AddPage()
+	if got := pdf.GetStringWidth("AV"); !near(got, 17.34) {
+		t.Errorf("after the page break: got width %g, want 17.34 (the spacing is kept)", got)
+	}
+	pdf.Text(10, 50, "BODY2")
+	pages := pageContents(t, pdf)
+	if len(pages) != 2 {
+		t.Fatalf("got %d pages, want 2", len(pages))
+	}
+	order := func(page string, parts ...string) bool {
+		pos := 0
+		for _, part := range parts {
+			next := strings.Index(page[pos:], part)
+			if next < 0 {
+				return false
+			}
+			pos += next + len(part)
+		}
+		return true
+	}
+	if !order(pages[0], "2.000 Tc", "(BODY1)", "0 Tc", "(FOOT)") {
+		t.Errorf("first page: the footer is not written without spacing:\n%s", pages[0])
+	}
+	if !order(pages[1], "(HEAD)", "2.000 Tc", "(BODY2)", "0 Tc", "(FOOT)") {
+		t.Errorf("second page: expected the header, the spacing, the text and the footer without spacing:\n%s", pages[1])
+	}
+	if strings.Index(pages[1], "Tc") < strings.Index(pages[1], "(HEAD)") {
+		t.Errorf("second page: the header is written with spacing:\n%s", pages[1])
+	}
+}
+
+// A header that sets a spacing of its own does not change the one of the
+// text.
+func TestSetCharSpacing_headerWithItsOwnSpacing(t *testing.T) {
+	pdf := newHelveticaPage()
+	pdf.SetHeaderFunc(func() {
+		pdf.SetCharSpacing(1)
+		pdf.Text(10, 10, "HEAD")
+	})
+	pdf.AddPage()
+	if got := pdf.GetStringWidth("AV"); !near(got, 13.34) {
+		t.Errorf("got width %g, want 13.34 (no spacing)", got)
+	}
+	pdf.Text(10, 50, "BODY")
+	pages := pageContents(t, pdf)
+	if !strings.Contains(pages[1], "(HEAD) Tj ET\n0.000 Tc\n") {
+		t.Errorf("the spacing of the header is still in effect after it:\n%s", pages[1])
+	}
+}
+
+// When a transformation or a clipping area ends the viewer goes back to the
+// spacing it had when it began, so the one set meanwhile is written again.
+func TestSetCharSpacing_changedInsideTransformOrClip(t *testing.T) {
+	t.Run("transformation", func(t *testing.T) {
+		pdf := newHelveticaPage()
+		pdf.SetCharSpacing(2)
+		pdf.TransformBegin()
+		pdf.SetCharSpacing(0)
+		pdf.TransformEnd()
+		content := pageContent(t, pdf)
+		if want := "Q\n0.000 Tc\n"; !strings.Contains(content, want) {
+			t.Errorf("content stream:\n%s\ndoes not contain:\n%s", content, want)
+		}
+	})
+	t.Run("clipping", func(t *testing.T) {
+		pdf := newHelveticaPage()
+		pdf.ClipRect(0, 0, 50, 50, false)
+		pdf.SetCharSpacing(1.5)
+		pdf.ClipEnd()
+		content := pageContent(t, pdf)
+		if want := "Q\n1.500 Tc\n"; !strings.Contains(content, want) {
+			t.Errorf("content stream:\n%s\ndoes not contain:\n%s", content, want)
+		}
+	})
+	t.Run("not changed", func(t *testing.T) {
+		pdf := newHelveticaPage()
+		pdf.SetCharSpacing(2)
+		pdf.TransformBegin()
+		pdf.Text(10, 10, "AV")
+		pdf.TransformEnd()
+		content := pageContent(t, pdf)
+		if strings.Count(content, "Tc") != 1 {
+			t.Errorf("the spacing is written more than once:\n%s", content)
+		}
+	})
+}
+
+// A spacing too small to count character by character still adds up: 0.004
+// points are 0.4 thousandths of 10 points, 40 in a hundred characters. A
+// hundred "A" are 66700 wide and 66740 with the spacing, which is more than
+// the 66720 of the line.
+func TestSetCharSpacing_smallSpacingAddsUpWhenBreakingLines(t *testing.T) {
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{
+		UnitStr: "pt",
+		Size:    gofpdf.SizeType{Wd: 1000, Ht: 100},
+	})
+	pdf.AddPage()
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetCellMargin(0)
+	txt := strings.Repeat("A", 100)
+	if got := pdf.SplitText(txt, 667.2); len(got) != 1 {
+		t.Fatalf("without spacing: got %d lines, want 1", len(got))
+	}
+	pdf.SetCharSpacing(0.004)
+	got := pdf.SplitText(txt, 667.2)
+	if len(got) != 2 || len(got[0]) != 99 || len(got[1]) != 1 {
+		t.Errorf("got %d lines, want one of 99 characters and one of 1", len(got))
+	}
+}

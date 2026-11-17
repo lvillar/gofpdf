@@ -221,12 +221,14 @@ func pathParse(pathStr string) (segs []SVGBasicSegmentType, err error) {
 		case 'A':
 			endX, endY := arg[5]+offX, arg[6]+offY
 			if endX != x || endY != y { // an arc that goes nowhere is left out
-				if arg[0] == 0 || arg[1] == 0 { // without a radius it is a line
+				// Without a radius the arc is a line, and so it is when its
+				// radii are too small or too large to compute it
+				curves := arcToCubics(x, y, arg[0], arg[1], arg[2], arg[3] != 0, arg[4] != 0, endX, endY)
+				if len(curves) == 0 {
 					add('L', endX, endY)
-				} else {
-					for _, c := range arcToCubics(x, y, arg[0], arg[1], arg[2], arg[3] != 0, arg[4] != 0, endX, endY) {
-						add('C', c[:]...)
-					}
+				}
+				for _, c := range curves {
+					add('C', c[:]...)
 				}
 				x, y = endX, endY
 			}
@@ -242,9 +244,14 @@ func pathParse(pathStr string) (segs []SVGBasicSegmentType, err error) {
 // the radii, the rotation of the ellipse in degrees and the two flags that
 // pick one of the four possible arcs. The conversion follows the
 // implementation notes of the SVG specification
-// (https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes).
+// (https://www.w3.org/TR/SVG/implnote.html#ArcImplementationNotes). No curves
+// are returned if a radius is zero or the arc cannot be computed with the
+// radii it is given.
 func arcToCubics(x1, y1, rx, ry, degRotate float64, largeArc, sweep bool, x2, y2 float64) (curves [][6]float64) {
 	rx, ry = math.Abs(rx), math.Abs(ry)
+	if rx == 0 || ry == 0 {
+		return nil
+	}
 	sinPhi, cosPhi := math.Sincos(degRotate * math.Pi / 180)
 	// Start point in the frame of the ellipse, measured from the middle of
 	// the chord
@@ -303,6 +310,13 @@ func arcToCubics(x1, y1, rx, ry, degRotate float64, largeArc, sweep bool, x2, y2
 		})
 		px, py, dx, dy = nx, ny, ndx, ndy
 	}
+	for _, curve := range curves {
+		for _, val := range curve {
+			if math.IsNaN(val) || math.IsInf(val, 0) {
+				return nil
+			}
+		}
+	}
 	return
 }
 
@@ -326,43 +340,67 @@ type SVGBasicType struct {
 // approximate them.
 //
 // The size of the image is taken from the width and height attributes of the
-// root element, which must be plain numbers. When they are missing it is taken
-// from the viewBox attribute, and the path coordinates are then measured from
-// the top left corner of the viewBox.
+// root element, given as plain numbers or in pixels ("24px"). When the image
+// also has a viewBox, which is how icons are usually drawn on a grid and shown
+// at another size, the path coordinates are converted from the units of the
+// viewBox to those of the size. When width and height are missing, or in a
+// unit that says nothing by itself ("100%"), the size is the one of the
+// viewBox. Either way the returned coordinates are measured from the top left
+// corner of the image and are in the unit of Wd and Ht.
 func SVGBasicParse(buf []byte) (sig SVGBasicType, err error) {
 	type pathType struct {
 		D string `xml:"d,attr"`
 	}
 	type srcType struct {
-		Wd      float64    `xml:"width,attr"`
-		Ht      float64    `xml:"height,attr"`
+		Wd      string     `xml:"width,attr"`
+		Ht      string     `xml:"height,attr"`
 		ViewBox string     `xml:"viewBox,attr"`
 		Paths   []pathType `xml:"path"`
 	}
 	var src srcType
 	err = xml.Unmarshal(buf, &src)
 	if err == nil {
-		var originX, originY float64
-		if src.Wd > 0 && src.Ht > 0 {
-			sig.Wd, sig.Ht = src.Wd, src.Ht
-		} else if box, ok := viewBoxParse(src.ViewBox); ok {
+		// What turns the coordinates of the paths into those of the image:
+		// the origin is subtracted and the result is scaled
+		originX, originY, scaleX, scaleY := 0.0, 0.0, 1.0, 1.0
+		wd, ht := svgLength(src.Wd), svgLength(src.Ht)
+		box, hasBox := viewBoxParse(src.ViewBox)
+		switch {
+		case wd > 0 && ht > 0:
+			sig.Wd, sig.Ht = wd, ht
+			if hasBox {
+				originX, originY = box[0], box[1]
+				scaleX, scaleY = wd/box[2], ht/box[3]
+			}
+		case hasBox:
 			originX, originY, sig.Wd, sig.Ht = box[0], box[1], box[2], box[3]
-		} else {
-			err = fmt.Errorf("unacceptable values for basic SVG extent: %.2f x %.2f",
-				src.Wd, src.Ht)
+		default:
+			err = fmt.Errorf("unacceptable values for basic SVG extent: %.2f x %.2f", wd, ht)
 		}
 		var segs []SVGBasicSegmentType
 		for _, path := range src.Paths {
 			if err == nil {
 				segs, err = pathParse(path.D)
 				if err == nil {
-					translatePath(segs, -originX, -originY)
+					transformPath(segs, originX, originY, scaleX, scaleY)
 					sig.Segments = append(sig.Segments, segs)
 				}
 			}
 		}
 	}
 	return
+}
+
+// svgLength returns the value of a width or height attribute given as a plain
+// number or in pixels. It returns zero for a missing attribute and for any
+// other unit.
+func svgLength(str string) float64 {
+	str = strings.TrimSuffix(strings.TrimSpace(str), "px")
+	val, err := strconv.ParseFloat(strings.TrimSpace(str), 64)
+	if err != nil || math.IsNaN(val) || math.IsInf(val, 0) {
+		return 0
+	}
+	return val
 }
 
 // viewBoxParse returns the four numbers of a viewBox attribute (left, top,
@@ -386,26 +424,26 @@ func viewBoxParse(str string) (box [4]float64, ok bool) {
 	return
 }
 
-// translatePath moves the absolute segments of a path by the specified
-// distances.
-func translatePath(segs []SVGBasicSegmentType, dx, dy float64) {
-	if dx == 0 && dy == 0 {
+// transformPath subtracts the specified origin from the absolute coordinates
+// of a path and scales the result.
+func transformPath(segs []SVGBasicSegmentType, originX, originY, scaleX, scaleY float64) {
+	if originX == 0 && originY == 0 && scaleX == 1 && scaleY == 1 {
 		return
 	}
 	for j := range segs {
 		seg := &segs[j]
 		switch seg.Cmd {
 		case 'H':
-			seg.Arg[0] += dx
+			seg.Arg[0] = (seg.Arg[0] - originX) * scaleX
 		case 'V':
-			seg.Arg[0] += dy
+			seg.Arg[0] = (seg.Arg[0] - originY) * scaleY
 		case 'M', 'L':
-			seg.Arg[0] += dx
-			seg.Arg[1] += dy
+			seg.Arg[0] = (seg.Arg[0] - originX) * scaleX
+			seg.Arg[1] = (seg.Arg[1] - originY) * scaleY
 		case 'Q', 'C':
 			for k := 0; k < len(seg.Arg); k += 2 {
-				seg.Arg[k] += dx
-				seg.Arg[k+1] += dy
+				seg.Arg[k] = (seg.Arg[k] - originX) * scaleX
+				seg.Arg[k+1] = (seg.Arg[k+1] - originY) * scaleY
 			}
 		}
 	}

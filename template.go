@@ -108,6 +108,11 @@ func (f *Fpdf) UseTemplateScaled(t Template, corner PointType, size SizeType) {
 	ty := (f.curPageSize.Ht - corner.Y - size.Ht) * f.k
 
 	f.outf("q %.4f 0 0 %.4f %.4f %.4f cm", scaleX, scaleY, tx, ty) // Translate
+	if f.charSpacing != 0 {
+		// The template is drawn with the character spacing it was built
+		// with, not with the one of the text of this page
+		f.out("0 Tc")
+	}
 	f.outf("/TPL%s Do Q", t.ID())
 }
 

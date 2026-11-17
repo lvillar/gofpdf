@@ -307,10 +307,11 @@ func TestSVGBasicParse_viewBoxWithoutSize(t *testing.T) {
 	})
 }
 
-// width and height, when present, keep deciding the size: the viewBox is not
-// applied.
-func TestSVGBasicParse_sizeWinsOverViewBox(t *testing.T) {
-	doc := []byte(`<svg width="30" height="40" viewBox="10 20 100 50"><path d="M10 20L15 25"/></svg>`)
+// With width, height and viewBox, the box is stretched to the size: the path
+// is in the units of the viewBox, 100 x 50 from (10,20), and the image is
+// 30 x 40, so the coordinates are scaled by 0.3 and 0.8.
+func TestSVGBasicParse_sizeAndViewBox(t *testing.T) {
+	doc := []byte(`<svg width="30" height="40" viewBox="10 20 100 50"><path d="M10 20L15 25H110V70"/></svg>`)
 	sig, err := gofpdf.SVGBasicParse(doc)
 	if err != nil {
 		t.Fatalf("SVGBasicParse: %v", err)
@@ -319,9 +320,59 @@ func TestSVGBasicParse_sizeWinsOverViewBox(t *testing.T) {
 		t.Errorf("got size %g x %g, want 30 x 40", sig.Wd, sig.Ht)
 	}
 	checkSegments(t, sig.Segments[0], []svgSeg{
-		{'M', []float64{10, 20}},
-		{'L', []float64{15, 25}},
+		{'M', []float64{0, 0}},
+		{'L', []float64{1.5, 4}},
+		{'H', []float64{30}},
+		{'V', []float64{40}},
 	})
+}
+
+// The usual icon: drawn on a grid of 24 and shown at another size.
+func TestSVGBasicParse_iconScaledByItsSize(t *testing.T) {
+	doc := []byte(`<svg width="96" height="96" viewBox="0 0 24 24"><path d="M12 2C6 2 2 6 2 12"/></svg>`)
+	sig, err := gofpdf.SVGBasicParse(doc)
+	if err != nil {
+		t.Fatalf("SVGBasicParse: %v", err)
+	}
+	checkSegments(t, sig.Segments[0], []svgSeg{
+		{'M', []float64{48, 8}},
+		{'C', []float64{24, 8, 8, 24, 8, 48}},
+	})
+}
+
+func TestSVGBasicParse_sizeWithUnits(t *testing.T) {
+	tests := []struct {
+		name   string
+		doc    string
+		wd, ht float64
+	}{
+		{"pixels", `<svg width="24px" height="12px"><path d="M0 0L1 1"/></svg>`, 24, 12},
+		// A size relative to what surrounds the image says nothing by itself:
+		// the viewBox is used
+		{"percentages", `<svg width="100%" height="100%" viewBox="0 0 64 32"><path d="M0 0L1 1"/></svg>`, 64, 32},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sig, err := gofpdf.SVGBasicParse([]byte(tc.doc))
+			if err != nil {
+				t.Fatalf("SVGBasicParse: %v", err)
+			}
+			if sig.Wd != tc.wd || sig.Ht != tc.ht {
+				t.Errorf("got size %g x %g, want %g x %g", sig.Wd, sig.Ht, tc.wd, tc.ht)
+			}
+		})
+	}
+}
+
+// Radii so small or so large that the arc cannot be computed leave a
+// straight line to its end point.
+func TestSVGBasicParse_arcWithExtremeRadii(t *testing.T) {
+	for _, d := range []string{"M0 0A1e-200 1e-200 0 0 1 10 10", "M0 0A1e200 1e200 0 0 1 10 10"} {
+		checkSegments(t, parseOnePath(t, svgDoc(d)), []svgSeg{
+			{'M', []float64{0, 0}},
+			{'L', []float64{10, 10}},
+		})
+	}
 }
 
 func TestSVGBasicParse_withoutSizeOrViewBox(t *testing.T) {
@@ -436,5 +487,23 @@ func TestSVGBasicDraw_keepsPosition(t *testing.T) {
 	pdf.SVGBasicDraw(&sig, 2, "F")
 	if x, y := pdf.GetXY(); x != 20 || y != 30 {
 		t.Errorf("got position (%g, %g), want (20, 30)", x, y)
+	}
+}
+
+// A PDF path has to begin with a move. A path that draws before moving
+// starts at the origin of the image, and one that keeps drawing after closing
+// a subpath starts a new one where the closed one began.
+func TestSVGBasicDraw_pathThatDrawsBeforeMoving(t *testing.T) {
+	sig, err := gofpdf.SVGBasicParse(svgDoc("L10 0V10zL5 5"))
+	if err != nil {
+		t.Fatalf("SVGBasicParse: %v", err)
+	}
+	pdf := newPointPage()
+	pdf.SetXY(20, 30)
+	pdf.SVGBasicDraw(&sig, 1, "D")
+	content := pageContent(t, pdf)
+	want := "20.00 70.00 m\n30.00 70.00 l\n30.00 60.00 l\nh\n20.00 70.00 m\n25.00 65.00 l\nS\n"
+	if !strings.Contains(content, want) {
+		t.Errorf("content stream:\n%s\ndoes not contain:\n%s", content, want)
 	}
 }

@@ -522,6 +522,7 @@ type Fpdf struct {
 	isRTL            bool                       // is is right to left mode enabled
 	kerning          bool                       // is pair kerning applied to UTF-8 fonts
 	charSpacing      float64                    // space added after each character
+	charSpacingSaved []float64                  // character spacing at each graphics state saved by a transformation or a clip
 	page             int                        // current page number
 	n                int                        // current object number
 	offsets          []int                      // array of object offsets

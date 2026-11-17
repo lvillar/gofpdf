@@ -109,7 +109,8 @@ pdf.Text(200-w, 20, "AVATAR")     // right-aligned at x = 200
 
 Kerning is off by default so that existing documents keep their layout. It
 applies to `Text`, `Cell`, `CellFormat`, `MultiCell` and `Write`, and to
-alignment, justification, underlines and line breaking.
+alignment, justification, underlines and line breaking. It is read from the
+font file of UTF-8 fonts and is not applied to right-to-left text.
 
 ### Draw an SVG Logo
 
@@ -125,8 +126,9 @@ pdf.SVGBasicDraw(&logo, 40/logo.Wd, "F") // 40 mm wide, filled
 
 `SVGBasicParse` reads the `<path>` elements of the document (every path
 command, including arcs and smooth curves) and takes the size from `width`
-and `height` or from the `viewBox`. Styles, transformations and other shapes
-are not read: set the colors on the `Fpdf` before drawing.
+and `height` or from the `viewBox`; with both, the drawing is scaled from the
+`viewBox` to the size. Styles, transformations, groups and other shapes are
+not read: set the colors on the `Fpdf` before drawing.
 
 ### Read a PDF
 

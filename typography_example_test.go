@@ -39,7 +39,7 @@ func ExampleFpdf_SetKerning() {
 
 	fileStr := example.Filename("Fpdf_SetKerning")
 	err := pdf.OutputFileAndClose(fileStr)
-	example.Summary(err, fileStr)
+	example.SummaryCompare(err, fileStr)
 	// Output:
 	// Successfully generated pdf/Fpdf_SetKerning.pdf
 }
@@ -76,7 +76,7 @@ func ExampleFpdf_SVGBasicDraw() {
 	}
 	fileStr := example.Filename("Fpdf_SVGBasicDraw")
 	err = pdf.OutputFileAndClose(fileStr)
-	example.Summary(err, fileStr)
+	example.SummaryCompare(err, fileStr)
 	// Output:
 	// Successfully generated pdf/Fpdf_SVGBasicDraw.pdf
 }

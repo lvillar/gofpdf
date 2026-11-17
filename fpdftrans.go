@@ -23,6 +23,7 @@ type TransformMatrix struct {
 func (f *Fpdf) TransformBegin() {
 	f.transformNest++
 	f.out("q")
+	f.saveCharSpacing()
 }
 
 // TransformScaleX scales the width of the following text, drawings and images.
@@ -207,6 +208,7 @@ func (f *Fpdf) TransformEnd() {
 	if f.transformNest > 0 {
 		f.transformNest--
 		f.out("Q")
+		f.restoreCharSpacing()
 	} else {
 		f.err = fmt.Errorf("error attempting to end transformation operation out of sequence")
 	}

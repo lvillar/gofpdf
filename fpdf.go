@@ -678,6 +678,9 @@ func (f *Fpdf) Close() {
 	}
 	// Page footer
 	f.inFooter = true
+	if f.footerFnc != nil || f.footerFncLpi != nil {
+		f.resetCharSpacing()
+	}
 	if f.footerFnc != nil {
 		f.footerFnc()
 	} else if f.footerFncLpi != nil {
@@ -739,9 +742,13 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	fc := f.color.fill
 	tc := f.color.text
 	cf := f.colorFlag
+	cs := f.charSpacing
 
 	if f.page > 0 {
 		f.inFooter = true
+		if f.footerFnc != nil || f.footerFncLpi != nil {
+			f.resetCharSpacing()
+		}
 		// Page footer avoid double call on footer.
 		if f.footerFnc != nil {
 			f.footerFnc()
@@ -755,10 +762,8 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 	}
 	// Start new page
 	f.beginpage(orientationStr, size)
-	if f.charSpacing != 0 {
-		// Each page starts without character spacing
-		f.outf("%.3f Tc", f.charSpacing*f.k)
-	}
+	// Each page starts without character spacing, and so does its header
+	f.charSpacing = 0
 	// 	Set line cap style to current value
 	// f.out("2 J")
 	f.outf("%d J", f.capStyle)
@@ -797,6 +802,10 @@ func (f *Fpdf) AddPageFormat(orientationStr string, size SizeType) {
 		if f.headerHomeMode {
 			f.SetHomeXY()
 		}
+	}
+	// Restore the character spacing of the text
+	if f.charSpacing != cs {
+		f.SetCharSpacing(cs)
 	}
 	// 	Restore line width
 	if f.lineWidth != lw {
@@ -1005,15 +1014,18 @@ func (f *Fpdf) stringSymbolWidth(s string) (w, count int) {
 }
 
 // lineExtra returns what kerning and character spacing add to the advance of
-// a character when text is broken into lines, in glyph units: the kerning with
-// the character before it in the line, if it has one, and the spacing after
-// it.
-func (f *Fpdf) lineExtra(prev, char rune, hasPrev bool) (extra int) {
-	if hasPrev {
+// a character when text is broken into lines, in glyph units. index is the
+// position of the character in its line. Kerning is the one with prev, the
+// character before it in the line, if kerned is true. The spacing is rounded
+// over the line as a whole, as GetStringSymbolWidth() does, so that a spacing
+// of a fraction of a unit is not lost.
+func (f *Fpdf) lineExtra(prev, char rune, index int, kerned bool) (extra int) {
+	if kerned {
 		extra = f.pairKerning(prev, char)
 	}
 	if f.charSpacing != 0 && f.fontSize != 0 {
-		extra += int(math.Round(f.charSpacing * 1000 / f.fontSize))
+		unit := f.charSpacing * 1000 / f.fontSize
+		extra += int(math.Round(float64(index+1)*unit)) - int(math.Round(float64(index)*unit))
 	}
 	return
 }
@@ -1486,6 +1498,7 @@ func (f *Fpdf) RadialGradient(x, y, w, h float64, r1, g1, b1, r2, g2, b2 int, x1
 // This ClipText() example demonstrates this method.
 func (f *Fpdf) ClipRect(x, y, w, h float64, outline bool) {
 	f.clipNest++
+	f.saveCharSpacing()
 	f.outf("q %.2f %.2f %.2f %.2f re W %s", x*f.k, (f.h-y)*f.k, w*f.k, -h*f.k, strIf(outline, "S", "n"))
 }
 
@@ -1499,6 +1512,7 @@ func (f *Fpdf) ClipRect(x, y, w, h float64, outline bool) {
 // restore unclipped operations.
 func (f *Fpdf) ClipText(x, y float64, txtStr string, outline bool) {
 	f.clipNest++
+	f.saveCharSpacing()
 	f.outf("q BT %.5f %.5f Td %d Tr (%s) Tj ET", x*f.k, (f.h-y)*f.k, intIf(outline, 5, 7), f.escape(txtStr))
 }
 
@@ -1528,6 +1542,7 @@ func (f *Fpdf) ClipRoundedRect(x, y, w, h, r float64, outline bool) {
 // details. This method is demonstrated in the ClipText() example.
 func (f *Fpdf) ClipRoundedRectExt(x, y, w, h, rTL, rTR, rBR, rBL float64, outline bool) {
 	f.clipNest++
+	f.saveCharSpacing()
 	f.roundedRectPath(x, y, w, h, rTL, rTR, rBR, rBL)
 	f.outf(" W %s", strIf(outline, "S", "n"))
 }
@@ -1577,6 +1592,7 @@ func (f *Fpdf) roundedRectPath(x, y, w, h, rTL, rTR, rBR, rBL float64) {
 // This ClipText() example demonstrates this method.
 func (f *Fpdf) ClipEllipse(x, y, rx, ry float64, outline bool) {
 	f.clipNest++
+	f.saveCharSpacing()
 	lx := (4.0 / 3.0) * rx * (math.Sqrt2 - 1)
 	ly := (4.0 / 3.0) * ry * (math.Sqrt2 - 1)
 	k := f.k
@@ -1626,6 +1642,7 @@ func (f *Fpdf) ClipCircle(x, y, r float64, outline bool) {
 // The ClipText() example demonstrates this method.
 func (f *Fpdf) ClipPolygon(points []PointType, outline bool) {
 	f.clipNest++
+	f.saveCharSpacing()
 	var s fmtBuffer
 	h := f.h
 	k := f.k
@@ -1648,6 +1665,7 @@ func (f *Fpdf) ClipEnd() {
 		if f.clipNest > 0 {
 			f.clipNest--
 			f.out("Q")
+			f.restoreCharSpacing()
 		} else {
 			f.err = fmt.Errorf("error attempting to end clip operation out of sequence")
 		}
@@ -2283,7 +2301,8 @@ func (f *Fpdf) Text(x, y float64, txtStr string) {
 //
 // Kerning is read from the "kern" feature of the GPOS table of UTF-8 fonts
 // (those loaded with AddUTF8Font() or AddUTF8FontFromBytes()). It has no
-// effect with fonts that lack that information or with other kinds of font.
+// effect with fonts that lack that information or with other kinds of font,
+// and it is not applied to right-to-left text (see RTL()).
 func (f *Fpdf) SetKerning(enable bool) {
 	f.kerning = enable
 }
@@ -2292,7 +2311,7 @@ func (f *Fpdf) SetKerning(enable bool) {
 // thousandths of the font size. It is zero unless kerning is enabled and the
 // current font is a UTF-8 font with kerning for that pair.
 func (f *Fpdf) pairKerning(left, right rune) int {
-	if !f.kerning || !f.isCurrentUTF8 || f.currentFont.utf8File == nil {
+	if !f.kerning || f.isRTL || !f.isCurrentUTF8 || f.currentFont.utf8File == nil {
 		return 0
 	}
 	return f.currentFont.utf8File.kerning(int(left), int(right))
@@ -2307,7 +2326,14 @@ func (f *Fpdf) kernedTextArray(txtStr string, spaceShift float64) string {
 	var sb strings.Builder
 	runes := []rune(txtStr)
 	start := 0
+	number := func(adjust float64) string {
+		return strconv.FormatFloat(math.Round(adjust*1000)/1000, 'f', -1, 64) + " "
+	}
 	sb.WriteByte('[')
+	if spaceShift != 0 && len(runes) > 0 && runes[0] == ' ' {
+		// A blank at the start of the line is stretched like the others
+		sb.WriteString(number(-spaceShift))
+	}
 	for j := 1; j <= len(runes); j++ {
 		var adjust float64
 		if j < len(runes) {
@@ -2321,7 +2347,7 @@ func (f *Fpdf) kernedTextArray(txtStr string, spaceShift float64) string {
 		}
 		sb.WriteString("(" + f.escape(utf8toutf16(string(runes[start:j]), false)) + ")")
 		if j < len(runes) {
-			sb.WriteString(" " + strconv.FormatFloat(math.Round(adjust*1000)/1000, 'f', -1, 64) + " ")
+			sb.WriteString(" " + number(adjust))
 		}
 		start = j
 	}
@@ -2339,10 +2365,44 @@ func (f *Fpdf) kernedTextArray(txtStr string, spaceShift float64) string {
 // The spacing is added after every character, the last one of a string
 // included. GetStringWidth() takes it into account, and so do alignment,
 // underlines and the breaking of text into lines.
+//
+// The spacing belongs to the text that is being written: headers, footers and
+// templates are drawn without it, and it is back in effect after the header of
+// each new page.
 func (f *Fpdf) SetCharSpacing(space float64) {
 	f.charSpacing = space
 	if f.page > 0 {
 		f.outf("%.3f Tc", space*f.k)
+	}
+}
+
+// resetCharSpacing sets the character spacing back to zero if it is not.
+func (f *Fpdf) resetCharSpacing() {
+	if f.charSpacing != 0 {
+		f.charSpacing = 0
+		f.out("0 Tc")
+	}
+}
+
+// saveCharSpacing is called when the graphics state is saved (operator q) by
+// a transformation or a clipping operation.
+func (f *Fpdf) saveCharSpacing() {
+	f.charSpacingSaved = append(f.charSpacingSaved, f.charSpacing)
+}
+
+// restoreCharSpacing is called after the graphics state has been restored
+// (operator Q). The viewer is then back to the character spacing that was in
+// effect when the state was saved: if it has been changed since, the current
+// one is written again.
+func (f *Fpdf) restoreCharSpacing() {
+	last := len(f.charSpacingSaved) - 1
+	if last < 0 {
+		return
+	}
+	saved := f.charSpacingSaved[last]
+	f.charSpacingSaved = f.charSpacingSaved[:last]
+	if saved != f.charSpacing {
+		f.outf("%.3f Tc", f.charSpacing*f.k)
 	}
 }
 
@@ -2672,7 +2732,7 @@ func (f *Fpdf) SplitLines(txt []byte, w float64) [][]byte {
 	l := 0
 	for i < nb {
 		c := s[i]
-		l += cw[c] + f.lineExtra(0, rune(c), false)
+		l += cw[c] + f.lineExtra(0, rune(c), i-j, false)
 		if c == ' ' || c == '\t' || c == '\n' {
 			sep = i
 		}
@@ -2846,9 +2906,9 @@ func (f *Fpdf) MultiCell(w, h float64, txtStr, borderStr, alignStr string, fill 
 			l += cw[int(c)]
 		}
 		if f.isCurrentUTF8 && i > j {
-			l += f.lineExtra(srune[i-1], c, true)
+			l += f.lineExtra(srune[i-1], c, i-j, true)
 		} else {
-			l += f.lineExtra(0, c, false)
+			l += f.lineExtra(0, c, i-j, false)
 		}
 		if l > wmax {
 			// Automatic line break
@@ -2970,9 +3030,9 @@ func (f *Fpdf) write(h float64, txtStr string, link int, linkStr string) {
 		}
 		l += float64(cw[int(c)])
 		if f.kerning && f.isCurrentUTF8 && i > j {
-			l += float64(f.lineExtra([]rune(s)[i-1], c, true))
+			l += float64(f.lineExtra([]rune(s)[i-1], c, i-j, true))
 		} else {
-			l += float64(f.lineExtra(0, c, false))
+			l += float64(f.lineExtra(0, c, i-j, false))
 		}
 		if l > wmax {
 			// Automatic line break
@@ -3462,7 +3522,13 @@ func (f *Fpdf) putImportedTemplates() {
 // UseImportedTemplate uses imported template from gofpdi. It draws imported
 // PDF page onto page.
 func (f *Fpdf) UseImportedTemplate(tplName string, scaleX float64, scaleY float64, tX float64, tY float64) {
-	f.outf("q 0 J 1 w 0 j 0 G 0 g q %.4F 0 0 %.4F %.4F %.4F cm %s Do Q Q\n", scaleX*f.k, scaleY*f.k, tX*f.k, (tY+f.h)*f.k, tplName)
+	// The imported page is drawn with its own character spacing, not with the
+	// one of the text of this page
+	spacing := ""
+	if f.charSpacing != 0 {
+		spacing = "0 Tc "
+	}
+	f.outf("q 0 J 1 w 0 j 0 G 0 g %sq %.4F 0 0 %.4F %.4F %.4F cm %s Do Q Q\n", spacing, scaleX*f.k, scaleY*f.k, tX*f.k, (tY+f.h)*f.k, tplName)
 }
 
 // ImportTemplates imports gofpdi template names into importedTplObjs for

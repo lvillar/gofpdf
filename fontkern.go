@@ -9,8 +9,13 @@ import "math"
 // maxKernRecords limits the number of records read from a GPOS table. It
 // keeps a damaged or hostile file, in which every offset can point to the same
 // data, from taking time and memory out of proportion to its size. Real fonts
-// stay far below it: the largest of some 1900 fonts measured reads 48601.
+// stay far below it: the largest of some 1900 fonts measured needs less than a
+// tenth of it.
 const maxKernRecords = 1 << 20
+
+// kernSubtableCost is what each subtable counts against maxKernRecords besides
+// the records it holds, for the memory that even an empty one takes.
+const kernSubtableCost = 64
 
 // pairKerning holds the pair adjustments of a font, in the design units of
 // the font. Each lookup is a list of subtables.
@@ -83,7 +88,7 @@ type fontTable struct {
 }
 
 func (t *fontTable) u16(pos int) int {
-	if pos < 0 || pos+2 > len(t.data) {
+	if pos < 0 || pos > len(t.data)-2 {
 		t.bad = true
 		return 0
 	}
@@ -98,9 +103,11 @@ func (t *fontTable) u32(pos int) int {
 	return t.u16(pos)<<16 | t.u16(pos+2)
 }
 
-// spend counts one more record read.
-func (t *fontTable) spend() {
-	t.budget--
+// spend counts records against the limit of the table. Everything that is
+// read in a loop or kept in memory is counted, whether it is found one after
+// the other in the file or again and again at the same place.
+func (t *fontTable) spend(records int) {
+	t.budget -= records
 	if t.budget < 0 {
 		t.bad = true
 	}
@@ -125,14 +132,14 @@ func (t *fontTable) coverage(pos int) (glyphs []uint16) {
 	case 1: // list of glyphs
 		for j := 0; j < count && !t.bad; j++ {
 			glyphs = append(glyphs, uint16(t.u16(pos+4+2*j)))
-			t.spend()
+			t.spend(1)
 		}
 	case 2: // ranges of glyphs
 		for j := 0; j < count && !t.bad; j++ {
 			start, end := t.u16(pos+4+6*j), t.u16(pos+6+6*j)
 			for glyph := start; glyph <= end && !t.bad; glyph++ {
 				glyphs = append(glyphs, uint16(glyph))
-				t.spend()
+				t.spend(1)
 			}
 		}
 	}
@@ -151,7 +158,7 @@ func (t *fontTable) classes(pos int) map[uint16]uint16 {
 			if class := t.u16(pos + 6 + 2*j); class != 0 {
 				classes[uint16(start+j)] = uint16(class)
 			}
-			t.spend()
+			t.spend(1)
 		}
 	case 2: // ranges of glyphs of the same class
 		count := t.u16(pos + 2)
@@ -161,7 +168,7 @@ func (t *fontTable) classes(pos int) map[uint16]uint16 {
 				if class != 0 {
 					classes[uint16(glyph)] = uint16(class)
 				}
-				t.spend()
+				t.spend(1)
 			}
 		}
 	}
@@ -171,6 +178,7 @@ func (t *fontTable) classes(pos int) map[uint16]uint16 {
 // pairSubtable reads the pair adjustment subtable at pos. ok is false if the
 // subtable has nothing that can be used.
 func (t *fontTable) pairSubtable(pos int) (st kernSubtable, ok bool) {
+	t.spend(kernSubtableCost)
 	format := t.u16(pos)
 	coverage := t.coverage(pos + t.u16(pos+2))
 	// Each pair has a value for each of its glyphs. Kerning is the
@@ -199,7 +207,7 @@ func (t *fontTable) pairSubtable(pos int) (st kernSubtable, ok bool) {
 					}
 					st.pairs[key] = val
 				}
-				t.spend()
+				t.spend(1)
 			}
 		}
 	case 2: // pairs by class
@@ -210,9 +218,19 @@ func (t *fontTable) pairSubtable(pos int) (st kernSubtable, ok bool) {
 		st.class1 = t.classes(pos + t.u16(pos+8))
 		st.class2 = t.classes(pos + t.u16(pos+10))
 		st.class1Count, st.class2Count = t.u16(pos+12), t.u16(pos+14)
+		if t.bad || recordSize == 0 {
+			return st, false
+		}
+		// The values have to fit in what is left of the table. The check is
+		// written with divisions because the product of the two counts does
+		// not fit in 32 bits.
+		room := (len(t.data) - pos - 16) / recordSize
+		if st.class2Count != 0 && st.class1Count > room/st.class2Count {
+			t.bad = true
+			return st, false
+		}
 		count := st.class1Count * st.class2Count
-		if recordSize == 0 || pos+16+count*recordSize > len(t.data) {
-			t.bad = t.bad || recordSize != 0
+		if t.spend(count); t.bad {
 			return st, false
 		}
 		st.values = make([]int16, count)
@@ -227,30 +245,78 @@ func (t *fontTable) pairSubtable(pos int) (st kernSubtable, ok bool) {
 	return st, !t.bad
 }
 
+// defaultFeatures returns the indexes of the features used by the default
+// language system of each script listed in the script list at pos.
+func (t *fontTable) defaultFeatures(pos int) map[int]bool {
+	features := make(map[int]bool)
+	if pos == 0 {
+		return features
+	}
+	scriptCount := t.u16(pos)
+	for j := 0; j < scriptCount && !t.bad; j++ {
+		t.spend(1)
+		script := pos + t.u16(pos+2+6*j+4)
+		offset := t.u16(script)
+		if offset == 0 { // the script has no default language system
+			continue
+		}
+		langSys := script + offset
+		if required := t.u16(langSys + 2); required != 0xFFFF {
+			features[required] = true
+		}
+		indexCount := t.u16(langSys + 4)
+		for k := 0; k < indexCount && !t.bad; k++ {
+			features[t.u16(langSys+6+2*k)] = true
+			t.spend(1)
+		}
+	}
+	return features
+}
+
 // parsePairKerning reads the pair adjustments of the "kern" feature from the
 // GPOS table of a font. It returns nil if the table has none or cannot be
 // read.
 //
 // A font can register a different kern feature for each script and language.
-// The lookups of all of them are used together, which gives the same result
-// as choosing the script of each run of text in all but exotic fonts, since
-// each lookup lists the glyphs it applies to. Only the adjustments of pairs
-// of adjacent glyphs are read: contextual kerning is ignored.
+// Text is written without stating its script or its language, so the kern
+// features of the default language system of every script are used together:
+// each lookup lists the glyphs it applies to, which makes the lookups of one
+// script leave the text of another alone. Kerning that a font reserves for one
+// language is not applied. If the table has no script list, or no default
+// language system uses a kern feature, all the kern features are used.
+//
+// Only the horizontal advance of the first glyph of each pair of adjacent
+// glyphs is read, which is where fonts store kerning. Adjustments to the
+// second glyph or to the placement of the glyphs, used by a few fonts of
+// complex scripts, and contextual kerning are ignored.
 func parsePairKerning(gpos []byte) *pairKerning {
 	t := &fontTable{data: gpos, budget: maxKernRecords}
-	featureList, lookupList := t.u16(6), t.u16(8)
-	// Lookups used by the features tagged "kern"
-	wanted := make(map[int]bool)
+	scriptList, featureList, lookupList := t.u16(4), t.u16(6), t.u16(8)
+	// Features tagged "kern", and among them the ones of the default
+	// language systems
+	var kern, selected []int
+	defaults := t.defaultFeatures(scriptList)
 	featureCount := t.u16(featureList)
 	for j := 0; j < featureCount && !t.bad; j++ {
-		record := featureList + 2 + 6*j
-		if t.u32(record) != 0x6B65726E { // "kern"
+		if t.u32(featureList+2+6*j) != 0x6B65726E { // "kern"
 			continue
 		}
-		feature := featureList + t.u16(record+4)
+		kern = append(kern, j)
+		if defaults[j] {
+			selected = append(selected, j)
+		}
+	}
+	if len(selected) == 0 {
+		selected = kern
+	}
+	// Lookups used by those features
+	wanted := make(map[int]bool)
+	for _, j := range selected {
+		feature := featureList + t.u16(featureList+2+6*j+4)
 		indexCount := t.u16(feature + 2)
 		for k := 0; k < indexCount && !t.bad; k++ {
 			wanted[t.u16(feature+4+2*k)] = true
+			t.spend(1)
 		}
 	}
 	// Lookups are applied in the order of the lookup list, whatever the
@@ -266,6 +332,7 @@ func parsePairKerning(gpos []byte) *pairKerning {
 		subtableCount := t.u16(lookup + 4)
 		var subtables []kernSubtable
 		for k := 0; k < subtableCount && !t.bad; k++ {
+			t.spend(1)
 			pos := lookup + t.u16(lookup+6+2*k)
 			kind := lookupType
 			if kind == 9 { // extension: the subtable itself is further away

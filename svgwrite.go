@@ -109,6 +109,16 @@ func (f *Fpdf) SVGBasicDraw(sb *SVGBasicType, scale float64, styleStr string) {
 	for j := 0; j < len(sb.Segments) && f.Ok(); j++ {
 		// Current point and start of the current subpath, in path units
 		var x, y, startX, startY float64
+		// A PDF subpath has to begin with a move. SVG lets a path draw
+		// without one, from the origin or, after closing a subpath, from
+		// where that one began: the move is then added.
+		open := false
+		begin := func() {
+			if !open {
+				f.MoveTo(xval(x), yval(y))
+				open = true
+			}
+		}
 		path := sb.Segments[j]
 		for k := 0; k < len(path) && f.Ok(); k++ {
 			arg := path[k].Arg
@@ -117,29 +127,38 @@ func (f *Fpdf) SVGBasicDraw(sb *SVGBasicType, scale float64, styleStr string) {
 				x, y = arg[0], arg[1]
 				startX, startY = x, y
 				f.MoveTo(xval(x), yval(y))
+				open = true
 			case 'L':
+				begin()
 				x, y = arg[0], arg[1]
 				f.LineTo(xval(x), yval(y))
 			case 'H':
+				begin()
 				x = arg[0]
 				f.LineTo(xval(x), yval(y))
 			case 'V':
+				begin()
 				y = arg[0]
 				f.LineTo(xval(x), yval(y))
 			case 'C':
+				begin()
 				f.CurveBezierCubicTo(xval(arg[0]), yval(arg[1]), xval(arg[2]), yval(arg[3]),
 					xval(arg[4]), yval(arg[5]))
 				x, y = arg[4], arg[5]
 			case 'Q':
 				// PDF has no quadratic curves: this is the same curve as a
 				// cubic one
+				begin()
 				f.CurveBezierCubicTo(
 					xval(x+2*(arg[0]-x)/3), yval(y+2*(arg[1]-y)/3),
 					xval(arg[2]+2*(arg[0]-arg[2])/3), yval(arg[3]+2*(arg[1]-arg[3])/3),
 					xval(arg[2]), yval(arg[3]))
 				x, y = arg[2], arg[3]
 			case 'Z':
-				f.ClosePath()
+				if open {
+					f.ClosePath()
+					open = false
+				}
 				x, y = startX, startY
 			default:
 				f.SetErrorf("Unexpected path command '%c'", path[k].Cmd)

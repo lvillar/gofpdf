@@ -198,3 +198,33 @@ func TestSetKerning_fontThatIsNotUTF8(t *testing.T) {
 		t.Errorf("content stream:\n%q\ndoes not contain:\n%q", content, want)
 	}
 }
+
+// A line that starts with a blank has one more space to stretch. "H" is 677
+// wide: 10000 - (4*677 + 2*286) leaves 6720 for the two spaces.
+func TestSetKerning_justifiedCellStartingWithSpace(t *testing.T) {
+	pdf := newKerningPage(t)
+	pdf.SetKerning(true)
+	pdf.SetXY(0, 0)
+	pdf.CellFormat(100, 10, " HH HH", "", 0, "J", false, 0, "")
+	content := pageContent(t, pdf)
+	want := "[-3360 (\x00 \x00H\x00H) -3360 (\x00 \x00H\x00H)] TJ ET"
+	if !strings.Contains(content, want) {
+		t.Errorf("content stream:\n%q\ndoes not contain:\n%q", content, want)
+	}
+}
+
+// Right-to-left text is written reversed, which would pair up the wrong
+// characters: it is left without kerning.
+func TestSetKerning_notAppliedToRightToLeftText(t *testing.T) {
+	pdf := newKerningPage(t)
+	pdf.SetKerning(true)
+	pdf.RTL()
+	if got := pdf.GetStringSymbolWidth("To"); got != 1099 {
+		t.Errorf("got width %d, want 1099 (the width without kerning)", got)
+	}
+	pdf.Text(50, 10, "To")
+	content := pageContent(t, pdf)
+	if want := "[(\x00o\x00T)] TJ"; !strings.Contains(content, want) {
+		t.Errorf("content stream:\n%q\ndoes not contain:\n%q", content, want)
+	}
+}
