@@ -7,23 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-17
+
+Typography that matches the browser: pair kerning and letter spacing, so that
+a PDF can reproduce an HTML design to the tenth of a millimeter, and SVG
+paths that can be filled, for logos. Kerning and letter spacing are off unless
+requested: existing documents keep their layout byte for byte.
+
 ### Added
 
 - **`Fpdf.SetKerning(enable)`** — pair kerning for UTF-8 fonts, read from
   the `kern` feature of the font's GPOS table (pairs listed one by one, pairs
-  by class and extension lookups). With kerning enabled, `Text`, `Cell`,
-  `CellFormat`, `MultiCell` and `Write` tighten or loosen pairs such as "AV"
-  or "To" the way browsers and word processors do, and `GetStringWidth`,
-  alignment, justification and underlines measure the kerned text. Widths
-  match the ones Chrome (HarfBuzz) computes for the same font. It is off by
-  default: existing documents keep their layout byte for byte.
+  by class and extension lookups, for the default language system of each
+  script). With kerning enabled, `Text`, `Cell`, `CellFormat`, `MultiCell` and
+  `Write` tighten or loosen pairs such as "AV" or "To" the way browsers and
+  word processors do, and `GetStringWidth`, alignment, justification and
+  underlines measure the kerned text. Widths match the ones Chrome (HarfBuzz)
+  computes for the same font. It is not applied to right-to-left text. The
+  amount of data read from a font is bounded, so a damaged or hostile file
+  cannot take time or memory out of proportion to its size.
 - **`Fpdf.SetCharSpacing(space)`** — letter spacing (tracking): space added
   after each character, in the unit of the document, negative to tighten.
   It is retained from page to page and `GetStringWidth`, alignment and
-  underlines take it into account. It works with every kind of font.
+  underlines take it into account. It works with every kind of font. Headers,
+  footers and templates are drawn without the spacing of the text around
+  them.
 - **Line breaking aware of kerning and letter spacing** — `MultiCell`,
   `Write`, `SplitText` and `SplitLines` measure the text as it will be
-  written, so a line with letter spacing no longer runs past the edge of its
+  written, so a line with letter spacing does not run past the edge of its
   cell and kerned text breaks where it really ends.
 - **`Fpdf.SVGBasicDraw(sb, scale, styleStr)`** — paints a basic SVG image
   building each of its paths as a single PDF path, so that it can be filled
@@ -34,9 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returned as the `C` and `Q` segments they stand for, so existing code that
   walks `SVGBasicType.Segments` keeps working.
 - **`viewBox` in `SVGBasicParse`** — a document without `width` and
-  `height` takes its size from the `viewBox`, with the path coordinates
-  measured from its top left corner. Documents that do have `width` and
-  `height` are read exactly as before.
+  `height`, or with them given as percentages, takes its size from the
+  `viewBox`. `width` and `height` in pixels (`"24px"`) are accepted.
+- Fuzz targets for the SVG path parser and the GPOS reader.
+
+### Changed
+
+- `SVGBasicParse` now applies the `viewBox` of a document that also has
+  `width` and `height`: the path coordinates are converted from the units of
+  the `viewBox` to those of the size, which is what the SVG format means by
+  it. An icon drawn on a 24 x 24 grid with a size of 96 x 96 used to come out
+  at a quarter of its size. Documents whose `viewBox` is `0 0 width height`,
+  or that have none, are read exactly as before.
 
 ### Fixed
 
@@ -126,6 +146,7 @@ is the module path, which is now `github.com/lvillar/gofpdf`.
 - Edge cases in core utilities; removal of dead code; consolidation of
   duplicated logic.
 
-[Unreleased]: https://github.com/lvillar/gofpdf/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/lvillar/gofpdf/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/lvillar/gofpdf/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/lvillar/gofpdf/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/lvillar/gofpdf/releases/tag/v1.0.0
