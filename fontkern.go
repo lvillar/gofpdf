@@ -6,10 +6,11 @@ import "math"
 // specific pairs of glyphs that are stored in the "kern" feature of the GPOS
 // table of the font.
 
-// maxKernRecords limits the number of records read from a GPOS table. No real
-// font comes close to it; it keeps a damaged file, in which every offset can
-// point to the same data, from being read forever.
-const maxKernRecords = 1 << 22
+// maxKernRecords limits the number of records read from a GPOS table. It
+// keeps a damaged or hostile file, in which every offset can point to the same
+// data, from taking time and memory out of proportion to its size. Real fonts
+// stay far below it: the largest of some 1900 fonts measured reads 48601.
+const maxKernRecords = 1 << 20
 
 // pairKerning holds the pair adjustments of a font, in the design units of
 // the font. Each lookup is a list of subtables.

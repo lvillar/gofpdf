@@ -155,3 +155,34 @@ func TestPairKerning_wildOffsets(t *testing.T) {
 		}
 	}
 }
+
+// A small damaged or hostile file can describe far more data than it holds:
+// here a coverage table of 124 bytes lists every glyph twenty times, 1.3
+// million entries. Reading stops at the limit and the font gets no kerning,
+// instead of spending time and memory on it.
+func TestPairKerning_tableThatExpandsTooMuch(t *testing.T) {
+	var table []byte
+	add := func(vals ...int) {
+		table = append(table, words(vals...)...)
+	}
+	// 0: header: feature list at 10, lookup list at 24
+	add(1, 0, 0, 10, 24)
+	// 10: feature list: "kern" at 10+8
+	add(1, 0x6B65, 0x726E, 8)
+	// 18: feature "kern": lookup 0
+	add(0, 1, 0)
+	// 24: lookup list: one lookup at 24+4
+	add(1, 4)
+	// 28: lookup 0: pair adjustment with one subtable at 28+8
+	add(2, 0, 1, 8)
+	// 36: pairs listed one by one; coverage at 36+10, no sets of pairs
+	add(1, 10, 4, 0, 0)
+	// 46: coverage: twenty ranges, each one with all the glyphs
+	add(2, 20)
+	for j := 0; j < 20; j++ {
+		add(0, 0xFFFF, 0)
+	}
+	if kern := parsePairKerning(table); kern != nil {
+		t.Errorf("got kerning from a table that lists 1.3 million glyphs in %d bytes", len(table))
+	}
+}
