@@ -972,6 +972,9 @@ func (f *Fpdf) GetStringSymbolWidth(s string) int {
 				w += 500
 			}
 		}
+		for j := 1; j < len(unicode); j++ {
+			w += f.pairKerning(unicode[j-1], unicode[j])
+		}
 	} else {
 		for _, ch := range []byte(s) {
 			if ch == 0 {
@@ -2211,14 +2214,18 @@ func (f *Fpdf) Text(x, y float64, txtStr string) {
 			txtStr = reverseText(txtStr)
 			x -= f.GetStringWidth(txtStr)
 		}
-		txt2 = f.escape(utf8toutf16(txtStr, false))
+		if f.kerning {
+			txt2 = f.kernedTextArray(txtStr, 0) + " TJ"
+		} else {
+			txt2 = "(" + f.escape(utf8toutf16(txtStr, false)) + ") Tj"
+		}
 		for _, uni := range []rune(txtStr) {
 			f.currentFont.usedRunes[int(uni)] = int(uni)
 		}
 	} else {
-		txt2 = f.escape(txtStr)
+		txt2 = "(" + f.escape(txtStr) + ") Tj"
 	}
-	s := sprintf("BT %.2f %.2f Td (%s) Tj ET", x*f.k, (f.h-y)*f.k, txt2)
+	s := sprintf("BT %.2f %.2f Td %s ET", x*f.k, (f.h-y)*f.k, txt2)
 	if f.underline && txtStr != "" {
 		s += " " + f.dounderline(x, y, txtStr)
 	}
@@ -2229,6 +2236,67 @@ func (f *Fpdf) Text(x, y float64, txtStr string) {
 		s = sprintf("q %s %s Q", f.color.text.str, s)
 	}
 	f.out(s)
+}
+
+// SetKerning enables or disables kerning: the adjustment of the space
+// between specific pairs of characters, such as "AV" or "To", that the
+// designer of a font stores in it. Text set with kerning looks the way it does
+// in a browser or a word processor; without it those pairs look loose.
+//
+// Kerning is disabled by default, so that the layout of existing documents
+// does not change. When it is enabled, it is applied to the text written with
+// Text(), Cell(), CellFormat(), MultiCell() and Write() and it is taken into
+// account by GetStringWidth(), in alignment, in justification and in
+// underlines. The breaking of text into lines (in MultiCell(), Write(),
+// SplitText() and SplitLines()) still measures the characters one by one, so a
+// line can break slightly before it needs to.
+//
+// Kerning is read from the "kern" feature of the GPOS table of UTF-8 fonts
+// (those loaded with AddUTF8Font() or AddUTF8FontFromBytes()). It has no
+// effect with fonts that lack that information or with other kinds of font.
+func (f *Fpdf) SetKerning(enable bool) {
+	f.kerning = enable
+}
+
+// pairKerning returns the kerning between two consecutive characters in
+// thousandths of the font size. It is zero unless kerning is enabled and the
+// current font is a UTF-8 font with kerning for that pair.
+func (f *Fpdf) pairKerning(left, right rune) int {
+	if !f.kerning || !f.isCurrentUTF8 || f.currentFont.utf8File == nil {
+		return 0
+	}
+	return f.currentFont.utf8File.kerning(int(left), int(right))
+}
+
+// kernedTextArray returns the operand of the TJ operator that shows txtStr
+// with the current UTF-8 font and the kerning between its characters: an array
+// of strings separated by the adjustments, in thousandths of the font size,
+// that move what follows to the left. spaceShift, in the same unit, is the
+// space added before each blank in order to justify text.
+func (f *Fpdf) kernedTextArray(txtStr string, spaceShift float64) string {
+	var sb strings.Builder
+	runes := []rune(txtStr)
+	start := 0
+	sb.WriteByte('[')
+	for j := 1; j <= len(runes); j++ {
+		var adjust float64
+		if j < len(runes) {
+			adjust = -float64(f.pairKerning(runes[j-1], runes[j]))
+			if runes[j] == ' ' {
+				adjust -= spaceShift
+			}
+			if adjust == 0 {
+				continue
+			}
+		}
+		sb.WriteString("(" + f.escape(utf8toutf16(string(runes[start:j]), false)) + ")")
+		if j < len(runes) {
+			sb.WriteString(" " + strconv.FormatFloat(math.Round(adjust*1000)/1000, 'f', -1, 64) + " ")
+		}
+		start = j
+	}
+	sb.WriteByte(']')
+	return sb.String()
 }
 
 // SetWordSpacing sets spacing between words of following text. See the
@@ -2428,26 +2496,38 @@ func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
 			}
 			space := f.escape(utf8toutf16(" ", false))
 			strSize := f.GetStringSymbolWidth(txtStr)
-			s.printf("BT 0 Tw %.2f %.2f Td [", (f.x+dx)*k, (f.h-(f.y+.5*h+.3*f.fontSize))*k)
+			s.printf("BT 0 Tw %.2f %.2f Td ", (f.x+dx)*k, (f.h-(f.y+.5*h+.3*f.fontSize))*k)
 			t := strings.Split(txtStr, " ")
 			shift := float64((wmax - strSize)) / float64(len(t)-1)
 			numt := len(t)
-			for i := 0; i < numt; i++ {
-				tx := t[i]
-				tx = "(" + f.escape(utf8toutf16(tx, false)) + ")"
-				s.printf("%s ", tx)
-				if (i + 1) < numt {
-					s.printf("%.3f(%s) ", -shift, space)
+			if f.kerning {
+				if numt < 2 {
+					shift = 0
 				}
+				s.printf("%s TJ ET", f.kernedTextArray(txtStr, shift))
+			} else {
+				s.printf("[")
+				for i := 0; i < numt; i++ {
+					tx := t[i]
+					tx = "(" + f.escape(utf8toutf16(tx, false)) + ")"
+					s.printf("%s ", tx)
+					if (i + 1) < numt {
+						s.printf("%.3f(%s) ", -shift, space)
+					}
+				}
+				s.printf("] TJ ET")
 			}
-			s.printf("] TJ ET")
 		} else {
 			var txt2 string
 			if f.isCurrentUTF8 {
 				if f.isRTL {
 					txtStr = reverseText(txtStr)
 				}
-				txt2 = f.escape(utf8toutf16(txtStr, false))
+				if f.kerning {
+					txt2 = f.kernedTextArray(txtStr, 0) + " TJ"
+				} else {
+					txt2 = "(" + f.escape(utf8toutf16(txtStr, false)) + ")Tj"
+				}
 				for _, uni := range []rune(txtStr) {
 					f.currentFont.usedRunes[int(uni)] = int(uni)
 				}
@@ -2456,10 +2536,11 @@ func (f *Fpdf) CellFormat(w, h float64, txtStr, borderStr string, ln int,
 				txt2 = strings.ReplaceAll(txtStr, "\\", "\\\\")
 				txt2 = strings.ReplaceAll(txt2, "(", "\\(")
 				txt2 = strings.ReplaceAll(txt2, ")", "\\)")
+				txt2 = "(" + txt2 + ")Tj"
 			}
 			bt := (f.x + dx) * k
 			td := (f.h - (f.y + dy + .5*h + .3*f.fontSize)) * k
-			s.printf("BT %.2f %.2f Td (%s)Tj ET", bt, td, txt2)
+			s.printf("BT %.2f %.2f Td %s ET", bt, td, txt2)
 			//BT %.2F %.2F Td (%s) Tj ET',(f.x+dx)*k,(f.h-(f.y+.5*h+.3*f.FontSize))*k,txt2);
 		}
 

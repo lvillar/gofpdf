@@ -520,6 +520,7 @@ type PageBox struct {
 type Fpdf struct {
 	isCurrentUTF8    bool                       // is current font used in utf-8 mode
 	isRTL            bool                       // is is right to left mode enabled
+	kerning          bool                       // is pair kerning applied to UTF-8 fonts
 	page             int                        // current page number
 	n                int                        // current object number
 	offsets          []int                      // array of object offsets

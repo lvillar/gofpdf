@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Fpdf.SetKerning(enable)`** — pair kerning for UTF-8 fonts, read from
+  the `kern` feature of the font's GPOS table (pairs listed one by one, pairs
+  by class and extension lookups). With kerning enabled, `Text`, `Cell`,
+  `CellFormat`, `MultiCell` and `Write` tighten or loosen pairs such as "AV"
+  or "To" the way browsers and word processors do, and `GetStringWidth`,
+  alignment, justification and underlines measure the kerned text. Widths
+  match the ones Chrome (HarfBuzz) computes for the same font. It is off by
+  default: existing documents keep their layout byte for byte.
 - **`Fpdf.SVGBasicDraw(sb, scale, styleStr)`** — paints a basic SVG image
   building each of its paths as a single PDF path, so that it can be filled
   (`"F"`, `"F*"`, `"DF"`, …). `SVGBasicWrite` strokes every segment on its

@@ -56,6 +56,10 @@ type utf8FontFile struct {
 	DefaultWidth         float64
 	symbolData           map[int]map[string][]int
 	CodeSymbolDictionary map[int]int
+	runeGlyphs           map[int]int  // glyph of each character
+	gpos                 []byte       // GPOS table, if the font has one
+	kernRead             bool         // set once the GPOS table has been read
+	pairKerning          *pairKerning // kerning read from the GPOS table
 }
 
 type tableDescription struct {
@@ -491,6 +495,13 @@ func (utf *utf8FontFile) parseTables() {
 	symbolCharDictionary := make(map[int][]int)
 	charSymbolDictionary := make(map[int]int)
 	utf.generateSCCSDictionaries(runeCMAPPosition, symbolCharDictionary, charSymbolDictionary)
+	utf.runeGlyphs = charSymbolDictionary
+	if desc, ok := utf.tableDescriptions["GPOS"]; ok {
+		data := utf.fileReader.array
+		if desc.position >= 0 && desc.size >= 0 && desc.position+desc.size <= len(data) {
+			utf.gpos = data[desc.position : desc.position+desc.size]
+		}
+	}
 
 	scale := 1000.0 / float64(utf.fontElementSize)
 	utf.parseHMTXTable(n, numSymbols, symbolCharDictionary, scale)
